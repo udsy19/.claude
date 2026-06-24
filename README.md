@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🧠 `.claude` — Production Claude Code Configuration
+# `.claude` — Production Claude Code Configuration
 
 **A complete, batteries-included `.claude` folder that doesn't just _contain_ skills — it _uses_ them.**
 
@@ -14,26 +14,26 @@
   <a href="https://github.com/udsy19/.claude/stargazers"><img src="https://img.shields.io/github/stars/udsy19/.claude?color=eab308" alt="Stars"></a>
 </p>
 
-[Install](#-install) · [How it works](#-how-it-works) · [What's inside](#-whats-inside) · [The hooks](#-the-hooks) · [License](#-license)
+[Install](#install) · [How it works](#how-it-works) · [What's inside](#whats-inside) · [The hooks](#the-hooks) · [License](#license)
 
 </div>
 
 ---
 
-## ✨ Highlights
+## Highlights
 
-- 🧭 **Reflexive routing** — the right skill is suggested on *every* prompt, no slash command required.
-- 🛡️ **Always-on disciplines** — verify-don't-hallucinate, no-bloat, continuous-git, memory, and ship-fast run in the background.
-- 📚 **40 skills across the full lifecycle** — define → plan → build → verify → review → ship.
-- 🪝 **5 fail-safe hooks** — degrade gracefully with missing deps, never block your prompt.
-- 🎨 **Best-in-class bundled skills** — design, React/Next, and accessibility from Anthropic, Vercel, AccessLint & more.
-- 🪶 **Token-conscious** — progressive disclosure + a trimmed session injection keep context lean.
+- **Reflexive routing** — the right skill is suggested on *every* prompt, no slash command required.
+- **Always-on disciplines** — verify-don't-hallucinate, no-bloat, continuous-git, memory, and ship-fast run in the background.
+- **40 skills across the full lifecycle** — define → plan → build → verify → review → ship.
+- **5 fail-safe hooks** — degrade gracefully with missing deps, never block your prompt.
+- **Best-in-class bundled skills** — design, React/Next, and accessibility from Anthropic, Vercel, AccessLint & more.
+- **Token-conscious** — progressive disclosure plus a trimmed session injection keep context lean.
 
 > Drop it into `~/.claude/` (global) or a project's `.claude/` and Claude Code picks everything up automatically.
 
 ---
 
-## ✨ Why this exists
+## Why this exists
 
 A pile of skills is only useful if the agent actually *reaches for them*. Most setups leave that to chance. This configuration adds two things on top of a strong skill library:
 
@@ -42,7 +42,7 @@ A pile of skills is only useful if the agent actually *reaches for them*. Most s
 
 The result: the folder doesn't just *contain* skills, it *uses* them.
 
-## 🧩 How it works
+## How it works
 
 ```
                      ┌─────────────────────────────────────────────┐
@@ -66,12 +66,12 @@ Three layers, by design:
 - **The router** — a deterministic nudge layer so the right skill surfaces reliably, even mid-session when the discovery map has scrolled out of attention. Conservative: it stays silent when nothing matches strongly.
 - **Slash commands** — for when you want to *force* a specific workflow (`/spec`, `/plan`, `/build`, `/test`, `/review`, `/ship`, …).
 
-## ⚡ Install
+## Install
 
 Claude Code reads a `.claude` folder at two scopes. Pick one:
 
 <details open>
-<summary><b>🌍 Global — applies to every project (recommended)</b></summary>
+<summary><b>Global — applies to every project (recommended)</b></summary>
 
 ```bash
 # clone, then copy the contents into your user-level .claude
@@ -85,7 +85,7 @@ cp claude-config/settings.json ~/.claude/settings.json   # merge if you already 
 </details>
 
 <details>
-<summary><b>📁 Per-project — shared with your team via git</b></summary>
+<summary><b>Per-project — shared with your team via git</b></summary>
 
 ```bash
 cp -R claude-config/{skills,agents,commands,hooks,rules,references,settings.json} your-project/.claude/
@@ -106,7 +106,7 @@ Then add the hook cache directories to your project's `.gitignore`:
 > - `.mcp.json` belongs at the **project root**, next to `.claude/` — not inside it.
 > - `.claude/rules/*.md` files without a `paths:` field auto-load every session (that's how `no-bloat.md` is always enforced).
 
-## 🔧 Requirements
+## Requirements
 
 Everything degrades gracefully if a dependency is missing, but for full functionality:
 
@@ -118,12 +118,12 @@ Everything degrades gracefully if a dependency is missing, but for full function
 | Google Chrome + the AccessLint MCP server | the `accesslint-*` live-DOM accessibility skills |
 | Claude Code **v2.1.59+** | native auto-memory referenced by `memory-discipline` |
 
-## 📦 What's inside
+## What's inside
 
 40 skills organized by development phase, plus the meta-skill that wires discovery.
 
 <details open>
-<summary><b>🟣 Define · Plan</b></summary>
+<summary><b>Define &amp; Plan</b></summary>
 
 | Skill | What it does |
 |---|---|
@@ -135,7 +135,7 @@ Everything degrades gracefully if a dependency is missing, but for full function
 </details>
 
 <details open>
-<summary><b>🔵 Build</b></summary>
+<summary><b>Build</b></summary>
 
 | Skill | What it does |
 |---|---|
@@ -156,7 +156,7 @@ Everything degrades gracefully if a dependency is missing, but for full function
 </details>
 
 <details open>
-<summary><b>🟢 Verify · Review</b></summary>
+<summary><b>Verify &amp; Review</b></summary>
 
 | Skill | What it does |
 |---|---|
@@ -174,7 +174,7 @@ Everything degrades gracefully if a dependency is missing, but for full function
 </details>
 
 <details open>
-<summary><b>🟠 Ship</b></summary>
+<summary><b>Ship</b></summary>
 
 | Skill | What it does |
 |---|---|
@@ -190,7 +190,7 @@ Everything degrades gracefully if a dependency is missing, but for full function
 </details>
 
 <details>
-<summary><b>⚪ Cross-cutting / always-on</b></summary>
+<summary><b>Cross-cutting / always-on</b></summary>
 
 | Skill | What it does |
 |---|---|
@@ -199,16 +199,16 @@ Everything degrades gracefully if a dependency is missing, but for full function
 
 </details>
 
-> Skills tagged with a source in *(parentheses)* are bundled third-party skills — see [Acknowledgements](#-acknowledgements--credits).
+> Skills tagged with a source in *(parentheses)* are bundled third-party skills — see [Acknowledgements](#acknowledgements--credits).
 
 **Also included:**
 
-- 🤖 **`agents/`** — 4 reusable personas: `code-reviewer`, `security-auditor`, `test-engineer`, `web-performance-auditor`.
-- ⌨️ **`commands/`** — 8 slash commands: `/build`, `/plan`, `/spec`, `/test`, `/review`, `/ship`, `/code-simplify`, `/webperf`.
-- 📏 **`rules/no-bloat.md`** — always-on policy: search before write, leave no dead code.
-- 📋 **`references/`** — checklists for testing, performance, security, accessibility, observability, orchestration, plus a `.claude`-folder authoring guide.
+- **`agents/`** — 4 reusable personas: `code-reviewer`, `security-auditor`, `test-engineer`, `web-performance-auditor`.
+- **`commands/`** — 8 slash commands: `/build`, `/plan`, `/spec`, `/test`, `/review`, `/ship`, `/code-simplify`, `/webperf`.
+- **`rules/no-bloat.md`** — always-on policy: search before write, leave no dead code.
+- **`references/`** — checklists for testing, performance, security, accessibility, observability, orchestration, plus a `.claude`-folder authoring guide.
 
-## 🪝 The hooks
+## The hooks
 
 All wired in `settings.json` and written to **fail safe** (no dependency → silent no-op; they never block your prompt).
 
@@ -219,7 +219,7 @@ All wired in `settings.json` and written to **fail safe** (no dependency → sil
 | `sdd-cache-pre.sh` / `sdd-cache-post.sh` | `PreToolUse` / `PostToolUse` (WebFetch) | HTTP-validator cache for `WebFetch` — serves unchanged pages from cache on a 304 |
 | `simplify-ignore.sh` | `PreToolUse` (Read) / `PostToolUse` (Edit\|Write) / `Stop` | Hides `simplify-ignore`-marked blocks from the model during edits, restores them after |
 
-## ⚙️ Configuration & customization
+## Configuration & customization
 
 - **Permissions** — `settings.json` ships a conservative allowlist (read-only inspection + local git ops like `add`/`commit`/`worktree`); `push`/`merge`/`reset` stay in `ask`. Trim to taste.
 - **Tune the router** — all keyword patterns live in one labeled block in `hooks/skill-router.sh`. Add/adjust a line per skill; it's plain `grep -E`.
@@ -227,7 +227,7 @@ All wired in `settings.json` and written to **fail safe** (no dependency → sil
 - **Disable a hook** — remove its entry from `settings.json` (the script can stay).
 - **MCP** — `.mcp.json` configures the AccessLint server (launched on demand via `npx`). Remove the block if you don't want it.
 
-## 🔒 Security & trust
+## Security & trust
 
 Agent Skills can execute code (scripts, and `!`-prefixed shell blocks run on load). Treat any skill folder like third-party code:
 
@@ -236,7 +236,7 @@ Agent Skills can execute code (scripts, and `!`-prefixed shell blocks run on loa
 - `ui-ux-pro-max` ships a local Python CLI (queries bundled CSVs — no network); the `accesslint-*` skills drive a local Chrome via an MCP server. Review both if that matters to you.
 - The hooks only ever read tool inputs and write to local cache dirs; none phone home.
 
-## 🙏 Acknowledgements & credits
+## Acknowledgements & credits
 
 This project stands on excellent open-source work. **If you fork or redistribute, keep these credits and the corresponding licenses** — they are required by the upstream licenses.
 
@@ -247,7 +247,7 @@ This project stands on excellent open-source work. **If you fork or redistribute
 | `web-design-guidelines`, `react-best-practices`, `composition-patterns`, `react-native-skills` | **Vercel — [`vercel-labs/agent-skills`](https://github.com/vercel-labs/agent-skills)** | MIT |
 | `ui-ux-pro-max` | **[`nextlevelbuilder/ui-ux-pro-max-skill`](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill)** | MIT |
 | `accesslint-scan` / `accesslint-audit` / `accesslint-diff` + MCP server | **[`accesslint/claude-marketplace`](https://github.com/accesslint/claude-marketplace)** | MIT |
-| `controlled-ux-designer`, `innovative-ux-designer` | **[`bencium/bencium-claude-code-design-skill`](https://github.com/bencium/bencium-claude-code-design-skill)** | ⚠️ None declared — **not cleared for redistribution** |
+| `controlled-ux-designer`, `innovative-ux-designer` | **[`bencium/bencium-claude-code-design-skill`](https://github.com/bencium/bencium-claude-code-design-skill)** | None declared — **not cleared for redistribution** |
 
 Original to this project: the `skill-router` reflexive routing system, the SessionStart standing-procedure injection, and the skills `anti-hallucination`, `pre-edit-scan` (+ `rules/no-bloat.md`), `memory-discipline`, `ship-fast`, `autonomous-git-workflow`, plus the wiring that ties them together.
 
@@ -256,11 +256,11 @@ Full attributions and license texts are in **[`THIRD-PARTY-LICENSES.md`](THIRD-P
 > [!WARNING]
 > The two bencium skills (`controlled-ux-designer`, `innovative-ux-designer`) declare **no upstream license** (all rights reserved by default) and are included here without one. Copyright remains with bencium — obtain the author's permission before reusing or redistributing them. See [`THIRD-PARTY-LICENSES.md`](THIRD-PARTY-LICENSES.md).
 
-## 📄 License
+## License
 
 This project's **original contributions** are MIT-licensed — see [`LICENSE`](LICENSE). Bundled third-party skills remain under **their own licenses**; see [`THIRD-PARTY-LICENSES.md`](THIRD-PARTY-LICENSES.md). Your project license does not override theirs.
 
-## 🤝 Contributing
+## Contributing
 
 Issues and PRs welcome. When adding a skill, follow the existing anatomy — `name` + `description` frontmatter, then Overview / When to Use / Process / Common Rationalizations / Red Flags / Verification — and reference other skills rather than duplicating them (the `pre-edit-scan` and `no-bloat` disciplines apply to this repo too).
 
