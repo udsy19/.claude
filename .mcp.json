@@ -1,0 +1,9 @@
+{
+  "_comment": "MCP servers for this skill set. IMPORTANT: this file belongs at your PROJECT ROOT (next to .claude/), not inside .claude/. The accesslint server powers the accesslint-* skills (live-DOM WCAG auditing via Chrome DevTools Protocol); without it those skills are inert. It is third-party and launches on demand via npx — review @accesslint/mcp before enabling if that matters to you. Remove this block if you don't want it.",
+  "mcpServers": {
+    "accesslint": {
+      "command": "npx",
+      "args": ["-y", "@accesslint/mcp"]
+    }
+  }
+}

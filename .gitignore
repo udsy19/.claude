@@ -1,0 +1,6 @@
+# Hook scratch space — never commit these.
+sdd-cache/
+.simplify-ignore-cache/
+
+# OS / editor cruft
+.DS_Store
