@@ -232,9 +232,13 @@ def consult(prompt, out, cwd, images=()):
             p = subprocess.run(["bash", SUP["command"]], input=full, text=True, capture_output=True, cwd=cwd,
                                env={**os.environ, **HEADLESS_ENV, "ORG_ROLE": "supervisor"})
         else:  # claude as a read-only supervisor: it may read, search and research, never edit
-            cmd = (f"cd {q(cwd)} && {q(CLAUDE)} -p {q(full)} --model {q(SUP['model'])} "
+            # The whole prompt goes on stdin with NO prompt argument: `claude -p` then reads stdin as the prompt.
+            # (stdin + a `-p "…"` argument is read as attachment content, which overflowed the context at 300 KiB,
+            # and one argv string is capped at 128 KiB on Linux.)
+            cmd = (f"cd {q(cwd)} && {q(CLAUDE)} -p --model {q(SUP['model'])} "
                    f"--disallowedTools Edit,Write,NotebookEdit,Monitor --dangerously-skip-permissions")
-            p = run_bounded(["bash", "-c", f"env {env_str({'ORG_ROLE': 'supervisor'})} bash -c {q(cmd)}"], CONSULT_TIMEOUT)
+            p = run_bounded(["bash", "-c", f"env {env_str({'ORG_ROLE': 'supervisor'})} bash -c {q(cmd)}"], CONSULT_TIMEOUT,
+                            input=full + "\n\nFollow the supervisor brief at the top of this prompt verbatim: emit your blocks now.\n")
         text = p.stdout
         open(out, "w").write(text)
         open(out + ".err", "w").write(p.stderr)
@@ -250,9 +254,10 @@ def consult(prompt, out, cwd, images=()):
 
 # ── workers ──────────────────────────────────────────────────────────────────────────────────────────
 def claude_cmd(model, prompt_file, cwd, env_extra, cont=False):
+    """The prompt FILE is the agent's stdin and there is no prompt argument (see consult()): no argv size limit."""
     c = "--continue " if cont else ""
-    inner = (f"cd {q(cwd)} && env {env_str(env_extra)} {q(CLAUDE)} -p {c}\"$(cat {q(prompt_file)})\" "
-             f"--dangerously-skip-permissions --model {q(MODELS[model])} --disallowedTools Monitor")
+    inner = (f"cd {q(cwd)} && env {env_str(env_extra)} {q(CLAUDE)} -p {c}"
+             f"--dangerously-skip-permissions --model {q(MODELS[model])} --disallowedTools Monitor < {q(prompt_file)}")
     return f"bash -c {q(inner)}"
 
 
@@ -280,7 +285,8 @@ def run_agent(name, model, base, brief, rnd):
                         + f"\n\n# YOUR BRIEF (supervisor, consult {rnd})\n\nYou are agent `{name}` in worktree `{wt}` "
                         f"on branch `{PREFIX}/{name}`.\n\n{brief}\n\n**Write your report to `{report}`, opening with "
                         f"`## TL;DR` (at most 10 lines).** Images the supervisor should see go in `{renders}/` (PNG; "
-                        "only images newer than its last consult are shown to it).\n")
+                        "only images newer than its last consult are shown to it).\n\n"
+                        "Follow the brief above verbatim, starting now.\n")
     rf = f"{R}/prompts/{rnd:04d}-{name}.resume.md"
     open(rf, "w").write("You were interrupted — your process exits whenever you end your turn. Continue your brief "
                         f"from where you stopped, running every command in the FOREGROUND. Do not stop until {report} "

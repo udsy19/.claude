@@ -39,7 +39,14 @@ cat > "$SB/fake-claude.sh" <<'EOF'
 #!/usr/bin/env bash
 # Fake worker: commits work, saves an image in $RENDERS_DIR, writes a long report with a TL;DR.
 case "$*" in *"reply with just OK"*) echo OK; exit 0;; esac
-report=$(printf '%s' "$*" | grep -o 'Write your report to `[^`]*`' | head -1 | sed 's/.*`\(.*\)`/\1/')
+raw=$(mktemp); cat > "$raw"; prompt=$(cat "$raw")   # the prompt is stdin, never an argument
+if [ "$ORG_ROLE" = supervisor ]; then   # backend "claude": record how it was called, then end the lane
+  printf '%s\n' "$*" > ../claude-sup.args; mv "$raw" ../claude-sup.stdin
+  printf '=== DONE ===\n'; exit 0
+fi
+printf '%s\n' "$*" > "$LANE_ROOT/args-$AGENT_NAME.txt"
+mv "$raw" "$LANE_ROOT/stdin-$AGENT_NAME.txt"
+report=$(printf '%s' "$prompt" | grep -o 'Write your report to `[^`]*`' | head -1 | sed 's/.*`\(.*\)`/\1/')
 case "$AGENT_NAME" in
   slowpoke|hang) sleep 611; exit 0;;     # never reports: overdue warning, then KILL / its deadline
   sleeper) sleep 6;;                     # outlives a loop restart
@@ -270,6 +277,22 @@ O4=$SB/org4; L4=$O4/lanes/h
 newlane "$O4" h 3 '=== AGENT name=hang model=opus ===\nhang\n=== END AGENT ===\n'
 hrc=0; (cd "$L4" && ORG_ROOT=$O4 tmo 90 python3 "$O4/supervise.py" "$L4" 1 > "$SB/h.out" 2>&1) || hrc=$?
 check "B8: a deadline kills the agent's whole process group (rc $hrc)" "[ $hrc = 0 ] && has $L4/lane.log 'agent hang TIMED OUT' && grep -q 'agent hang finished rc=124' $L4/lane.log && ! pgrep -f '$L4/wt/hang' >/dev/null"
+
+# ── decision 9: prompts travel on stdin, never argv (Linux caps one argument at 128 KiB) ──
+echo "== prompts on stdin"
+O5=$SB/org5; L5=$O5/lanes/b
+newlane "$O5" b 120 '=== AGENT name=bigone model=opus ===\nread the big context\n=== END AGENT ===\n'
+python3 -c "import sys; open(sys.argv[1],'a').write(('context line for the big prompt test. ' * 8 + '\n') * 1100)" "$L5/context.md"
+brc=0; (cd "$L5" && ORG_ROOT=$O5 tmo 90 python3 "$O5/supervise.py" "$L5" 1 > "$SB/b.out" 2>&1) || brc=$?
+PF=$(ls "$L5"/prompts/0001-bigone.md 2>/dev/null)
+check "D9: worker argv carries no prompt (rc $brc)" "[ $brc = 0 ] && grep -qx -- '-p --dangerously-skip-permissions --model fake-model --disallowedTools Monitor' $L5/args-bigone.txt"
+check "D9: a >300 KiB prompt reaches the worker intact on stdin" "[ \$(wc -c < '$PF') -gt 307200 ] && cmp -s '$PF' $L5/stdin-bigone.txt"
+check "D9: the instruction is the last line of the prompt" "[ \"\$(tail -n 1 '$PF')\" = 'Follow the brief above verbatim, starting now.' ]"
+O6=$SB/org6; L6=$O6/lanes/c
+newlane "$O6" c 120
+python3 -c "import json,sys; d=json.load(open(sys.argv[1])); d['supervisor']={'backend':'claude','model':'sup-model'}; json.dump(d,open(sys.argv[1],'w'))" "$O6/org.json"
+crc=0; (cd "$L6" && ORG_ROOT=$O6 tmo 60 python3 "$O6/supervise.py" "$L6" 1 > "$SB/c.out" 2>&1) || crc=$?
+check "D9: claude supervisor gets its prompt on stdin, none in argv (rc $crc)" "[ $crc = 0 ] && has $L6/lane.log 'supervisor declared DONE' && ! grep -q 'CONSULT' $L6/claude-sup.args && grep -q '^# CONSULT 1' $L6/claude-sup.stdin && [ \"\$(tail -n 1 $L6/claude-sup.stdin)\" = 'Follow the supervisor brief at the top of this prompt verbatim: emit your blocks now.' ]"
 
 echo "== $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]
