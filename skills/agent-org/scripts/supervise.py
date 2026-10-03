@@ -15,11 +15,12 @@ Each consult, the supervisor reads its brief + context + plan + owner rulings (a
   === LEARN === … === END LEARN ===                        (appended to lane-memory.md: the supervisor's persistent memory)
   === DONE ===
 A consult with none of these is logged as NO ACTIONABLE BLOCK and quoted back in the next prompt.
-ROLLING: the supervisor is re-consulted whenever ANY agent finishes (no round barrier). A restarted loop
-ADOPTS agents still running (each agent runs under `timeout` in its own process group).
+ROLLING: the supervisor is re-consulted whenever ANY agent finishes (no round barrier). Each agent runs in its
+own session (process group) with a deadline kept in <LANE_ROOT>/pids/<name>.json; a restarted loop ADOPTS the
+agents still running from those files (no GNU `timeout`: macOS does not ship it).
 Stop: touch <LANE_ROOT>/STOP.
 """
-import datetime, glob, json, os, pwd, re, shlex, subprocess, sys, time
+import datetime, glob, json, os, pwd, re, shlex, signal, subprocess, sys, time
 
 LANE_ROOT = os.path.abspath(sys.argv[1]) if len(sys.argv) > 1 else os.getcwd()
 START_ROUND = int(sys.argv[2]) if len(sys.argv) > 2 else 1
@@ -36,6 +37,7 @@ INT = f"{R}/int"
 LOG = f"{R}/lane.log"
 MAX_PAR = int(LANE.get("max_parallel", 2))
 AGENT_TIMEOUT = int(ORG.get("agent_timeout_s", 8 * 3600))
+CONSULT_TIMEOUT = int(ORG.get("consult_timeout_s", 5400))
 REPORT_OVERDUE_S = int(ORG.get("report_overdue_s", 90 * 60))   # a running agent with no report file after this: warn once
 POLL_S = int(ORG.get("poll_interval_s", 30))
 IDLE_WAIT_S = int(ORG.get("idle_wait_s", 1200))              # nothing running: wait this long for owner answers / changes
@@ -82,6 +84,35 @@ def log(msg):
 
 def sh(cmd, **kw):
     return subprocess.run(cmd, shell=True, text=True, capture_output=True, **kw)
+
+
+def run_bounded(args, timeout, input=None, **kw):
+    """subprocess.run with a deadline that kills the WHOLE process group (a shell's children too), portably."""
+    p = subprocess.Popen(args, stdin=subprocess.PIPE if input is not None else subprocess.DEVNULL,
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True, **kw)
+    try:
+        out, err = p.communicate(input, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        killpg(p.pid)
+        out, err = p.communicate()
+        err += f"\n(killed after {timeout}s)"
+        p.returncode = 124
+    return subprocess.CompletedProcess(args, p.returncode, out, err)
+
+
+def killpg(pid, grace=10):
+    """TERM the process group, then KILL it if anything is left after `grace` seconds."""
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(pid, sig)
+        except (ProcessLookupError, PermissionError):
+            return
+        for _ in range(grace * 10):
+            try:
+                os.killpg(pid, 0)
+            except (ProcessLookupError, PermissionError):
+                return
+            time.sleep(0.1)
 
 
 def git_out(cmd, cwd=REPO):
@@ -196,16 +227,14 @@ def consult(prompt, out, cwd, images=()):
                 "-c", f'model_reasoning_effort="{SUP.get("effort", "high")}"', "-C", cwd, "-"]
             for img in images:
                 args += ["-i", img]
-            p = subprocess.run(["timeout", "5400"] + args, input=prompt, text=True, capture_output=True)
+            p = run_bounded(args, CONSULT_TIMEOUT, input=prompt)
         elif SUP["backend"] == "script":  # TEST-ONLY (scripts/test-supervise.sh): canned output, prompt on stdin, no model
             p = subprocess.run(["bash", SUP["command"]], input=full, text=True, capture_output=True, cwd=cwd,
                                env={**os.environ, **HEADLESS_ENV, "ORG_ROLE": "supervisor"})
         else:  # claude as a read-only supervisor: it may read, search and research, never edit
             cmd = (f"cd {q(cwd)} && {q(CLAUDE)} -p {q(full)} --model {q(SUP['model'])} "
                    f"--disallowedTools Edit,Write,NotebookEdit,Monitor --dangerously-skip-permissions")
-            p = subprocess.run(["timeout", "5400", "bash", "-c",
-                                f"env {env_str({'ORG_ROLE': 'supervisor'})} bash -c {q(cmd)}"],
-                               text=True, capture_output=True)
+            p = run_bounded(["bash", "-c", f"env {env_str({'ORG_ROLE': 'supervisor'})} bash -c {q(cmd)}"], CONSULT_TIMEOUT)
         text = p.stdout
         open(out, "w").write(text)
         open(out + ".err", "w").write(p.stderr)
@@ -261,12 +290,15 @@ def run_agent(name, model, base, brief, rnd):
         env[ORG["per_agent_build_dir"]] = f"{R}/target/{name}"
         os.makedirs(env[ORG["per_agent_build_dir"]], exist_ok=True)
     agent_log = f"{R}/logs/{rnd:04d}-{name}.log"
-    # adopt_running() parses this command line back: keep the "cd <wt> " and "[ -s <report> ]" shapes
+    # lanes.sh gc spots a running agent by the leading "cd <wt> &&": keep that shape
     script = (f"cd {q(wt)} && {claude_cmd(model, pf, wt, env)} > {q(agent_log)} 2>&1; "
               f"for n in 1 2 3; do [ -s {q(report)} ] && break; "
               f"{claude_cmd(model, rf, wt, env, cont=True)} >> {q(agent_log)} 2>&1; done")
     log(f"agent {name} ({model}) start on {base}")
-    return subprocess.Popen(["timeout", str(AGENT_TIMEOUT), "bash", "-c", script]), report, name
+    p = subprocess.Popen(["bash", "-c", script], stdin=subprocess.DEVNULL, start_new_session=True)
+    a = Agent(name, p.pid, time.time() + AGENT_TIMEOUT, p)
+    write_pidfile(name, a, report)
+    return a, report, name
 
 
 def finish(procs):
@@ -277,45 +309,77 @@ def finish(procs):
         msg = q(f"{PREFIX} {name}: uncommitted agent work (safety net)")
         sh(f"cd {q(wt)} && git add -A && env {cenv} git commit --no-verify -q -m {msg}")
         sh(f"cd {q(wt)} && git push -q origin {q(f'HEAD:refs/heads/{PREFIX}/{name}')}")
-        log(f"agent {name} finished rc={p.returncode} report={'present' if os.path.exists(report) else 'MISSING'}")
+        rc = "?" if p.returncode is None else p.returncode         # None: it ended while the loop was down
+        log(f"agent {name} finished rc={rc} report={'present' if os.path.exists(report) else 'MISSING'}")
+        for f in (f"{R}/pids/{name}.json",):
+            if os.path.exists(f):
+                os.remove(f)
         FINISHED.append(name)
         if name in ST["overdue"]:
             ST["overdue"].remove(name)
             save_state()
 
 
-class Adopted:
-    def __init__(self, pid):
-        self.pid, self.returncode = pid, None
+class Agent:
+    """A worker's process group (its pid is the group id: start_new_session=True) and its deadline. `proc` is the
+    Popen this loop started; an ADOPTED agent (started by a previous loop) has none and is polled by pid."""
+    def __init__(self, name, pid, deadline, proc=None):
+        self.name, self.pid, self.deadline, self.proc, self.returncode = name, pid, deadline, proc, None
 
     def poll(self):
         if self.returncode is None:
-            try:
-                os.kill(self.pid, 0)
-            except ProcessLookupError:
-                self.returncode = 0
-            except PermissionError:
-                pass
+            if self.proc:
+                self.returncode = self.proc.poll()
+            elif not alive(self.pid):
+                self.returncode = "?"                             # not our child: its exit status is unknowable
+            if self.returncode is None and time.time() > self.deadline:
+                log(f"agent {self.name} TIMED OUT (deadline passed) — terminating its process group")
+                self.terminate()
+                self.returncode = 124                              # timeout(1)'s code: lane-metrics counts it
         return self.returncode
 
     def terminate(self):
-        try:
-            os.kill(self.pid, 15)
-        except ProcessLookupError:
-            pass
+        killpg(self.pid)
+        if self.proc:
+            self.proc.wait()
+
+
+def alive(pid):
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+
+
+def write_pidfile(name, a, report):
+    os.makedirs(f"{R}/pids", exist_ok=True)
+    open(f"{R}/pids/{name}.json", "w").write(json.dumps({"pid": a.pid, "deadline": a.deadline, "report": report}))
 
 
 def adopt_running():
-    out = []
-    for pid in sh(f"pgrep -f {q(f'timeout [0-9]+ bash -c cd .?{R}/wt/')}").stdout.split():
-        cmd = sh(f"ps -ww -o args= -p {pid}").stdout.strip()      # ps, not /proc: macOS has no /proc
-        if not cmd:
+    """Agents a previous loop started, from their pid files. A live pid whose command line is not this lane's
+    agent (the pid was reused) is not adopted; an agent that ended while the loop was down is finished now."""
+    out, gone = [], []
+    for f in sorted(glob.glob(f"{R}/pids/*.json")):
+        name = os.path.basename(f)[:-5]
+        try:
+            d = json.load(open(f))
+        except (OSError, ValueError):
+            os.remove(f)
             continue
-        m = re.search(rf"cd '?{re.escape(R)}/wt/([^/' ]+)'? ", cmd)
-        rp = re.search(r"\[ -s ('[^']*'|\S+) \]", cmd)
-        if m and cmd.startswith("timeout"):
-            out.append((Adopted(int(pid)), rp.group(1).strip("'") if rp else "", m.group(1)))
-            log(f"adopted running agent {m.group(1)} (pid {pid})")
+        a = Agent(name, int(d["pid"]), float(d["deadline"]))
+        cmd = sh(f"ps -ww -o args= -p {a.pid}").stdout              # ps, not /proc: macOS has no /proc
+        if alive(a.pid) and f"{R}/wt/{name}" in cmd:
+            out.append((a, d["report"], name))
+            log(f"adopted running agent {name} (pid {a.pid})")
+        else:
+            a.returncode = "?"
+            gone.append((a, d["report"], name))
+    if gone:
+        finish(gone)
     return out
 
 
@@ -561,6 +625,7 @@ def main():
     if stopped():
         for x in running:
             x[0].terminate()
+            x[0].poll()
         finish(running)
     log("supervisor loop exiting")
 

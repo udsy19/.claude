@@ -29,7 +29,8 @@ $(files)
 EOF
   mv "$S.tmp" "$S"; FIRST=0
   if [ $(( $(date +%s) - LASTPROBE )) -ge "$PI" ]; then LASTPROBE=$(date +%s)
-    out=$(cd /tmp && timeout 300 "$CL" -p "reply with just OK" --model "$PM" 2>&1 | tail -3)   # as this user: one user runs the org
+    # as this user (one user runs the org); perl's alarm, not GNU timeout, which stock macOS lacks
+    out=$(cd /tmp && perl -e 'alarm shift; exec @ARGV' 300 "$CL" -p "reply with just OK" --model "$PM" 2>&1 | tail -3)
     # alert only on a REAL auth error — a slow reply on a busy box is not a failure
     if echo "$out" | grep -qiE "oauth|authenticat|expired|401|unauthorized|log ?in"; then echo "$(date -u '+%F %H:%M') WORKER AUTH FAILED: $(echo $out | cut -c1-120)"; fi
   fi

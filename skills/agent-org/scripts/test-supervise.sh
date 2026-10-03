@@ -18,6 +18,8 @@ cleanup() {
 trap cleanup EXIT
 check() { if eval "$2"; then PASS=$((PASS+1)); echo "  ok   $1"; else FAIL=$((FAIL+1)); echo "  FAIL $1"; fi; }
 has() { grep -qF -- "$2" "$1" 2>/dev/null; }
+# A deadline for the harness itself without GNU timeout (stock macOS lacks it): perl's alarm, then exec.
+tmo() { perl -e 'alarm shift; exec @ARGV or die "exec $ARGV[0]: $!"' "$@"; }
 export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.invalid GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.invalid
 
 echo "== sandbox $SB"
@@ -39,7 +41,8 @@ cat > "$SB/fake-claude.sh" <<'EOF'
 case "$*" in *"reply with just OK"*) echo OK; exit 0;; esac
 report=$(printf '%s' "$*" | grep -o 'Write your report to `[^`]*`' | head -1 | sed 's/.*`\(.*\)`/\1/')
 case "$AGENT_NAME" in
-  slowpoke) sleep 611; exit 0;;          # never reports: overdue warning, then KILL
+  slowpoke|hang) sleep 611; exit 0;;     # never reports: overdue warning, then KILL / its deadline
+  sleeper) sleep 6;;                     # outlives a loop restart
   alpha) sleep 2;;
   beta) sleep 8;;
 esac
@@ -89,7 +92,7 @@ printf 'PNG-owner' > "$L/renders/owner/ref-owner.png"
 
 # ── run the loop ──
 echo "== supervise.py (canned consults 1-5)"
-( cd "$L" && ORG_ROOT=$ORG timeout 180 python3 "$ORG/supervise.py" "$L" 1 > "$SB/supervise.out" 2>&1 ); rc=$?
+( cd "$L" && ORG_ROOT=$ORG tmo 180 python3 "$ORG/supervise.py" "$L" 1 > "$SB/supervise.out" 2>&1 ); rc=$?
 check "loop exits cleanly on DONE (rc $rc)" "[ $rc = 0 ] && has $L/lane.log 'supervisor declared DONE'"
 check "five consults ran" "[ \$(grep -c '=== CONSULT' $L/lane.log) = 5 ]"
 check "log lines carry the date" "grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2} === CONSULT 1' $L/lane.log"
@@ -184,7 +187,7 @@ check "metrics: legacy HH:MM lines dated across midnight" \
 # ── lane-events.sh: offsets without bash-4 arrays (macOS /bin/bash is 3.2) ──
 echo "== lane-events.sh under /bin/bash ($(/bin/bash -c 'echo $BASH_VERSION'))"
 mkdir -p "$ORG/logs"; printf '%s 0\n' "$L/lane.log" > "$ORG/logs/lane-events.state"
-evout=$(timeout 6 /bin/bash "$KIT/scripts/lane-events.sh" "$ORG" 2>&1)
+evout=$(tmo 6 /bin/bash "$KIT/scripts/lane-events.sh" "$ORG" 2>&1)
 check "feed replays from the saved offset" "echo \"\$evout\" | grep -q 't: .*KILLED slowpoke' && ! echo \"\$evout\" | grep -q 'invalid option'"
 check "offset saved as the file's line count" "grep -qF \"$L/lane.log \$(wc -l < $L/lane.log | tr -d ' ')\" $ORG/logs/lane-events.state"
 
@@ -202,10 +205,10 @@ check "a goal with & | / \\ lands literally" "grep -qF -- 'Fast & simple | a/b \
 : > "$ORG2/lanes/g/context.md"; echo "- MARK-KEEP" >> "$ORG2/lanes/g/rulings.md"
 bash "$KIT/scripts/lanes.sh" "$ORG2" new g "$G" 1 false >/dev/null 2>&1
 check "re-run refills an empty file, keeps a filled one" "[ -s $ORG2/lanes/g/context.md ] && has $ORG2/lanes/g/rulings.md MARK-KEEP"
-urc=0; (cd "$ORG2/lanes/g" && ORG_ROOT=$ORG2 timeout 30 python3 "$ORG2/supervise.py" "$ORG2/lanes/g" 1 >/dev/null 2>&1) || urc=$?
+urc=0; (cd "$ORG2/lanes/g" && ORG_ROOT=$ORG2 tmo 30 python3 "$ORG2/supervise.py" "$ORG2/lanes/g" 1 >/dev/null 2>&1) || urc=$?
 check "supervise.py refuses an UNFILLED lane (rc $urc)" "[ $urc = 2 ] && grep -q 'UNFILLED context.md: .*{{VISION_PARAGRAPH}}' $ORG2/lanes/g/lane.log && ! grep -q 'CONSULT' $ORG2/lanes/g/lane.log"
 python3 -c "import json,sys; d=json.load(open(sys.argv[1])); d['worker_user']='agent-org-nobody'; json.dump(d,open(sys.argv[1],'w'))" "$ORG2/org.json"
-wrc=0; (cd "$ORG2/lanes/g" && ORG_ROOT=$ORG2 timeout 30 python3 "$ORG2/supervise.py" "$ORG2/lanes/g" 1 >/dev/null 2>&1) || wrc=$?
+wrc=0; (cd "$ORG2/lanes/g" && ORG_ROOT=$ORG2 tmo 30 python3 "$ORG2/supervise.py" "$ORG2/lanes/g" 1 >/dev/null 2>&1) || wrc=$?
 check "B1: a loop not running as worker_user refuses (no sudo) (rc $wrc)" "[ $wrc = 2 ] && grep -q \"REFUSED to start: this lane runs as worker_user 'agent-org-nobody'\" $ORG2/lanes/g/lane.log && ! grep -q CONSULT $ORG2/lanes/g/lane.log"
 check "B1: no sudo/chown/as_worker left in the loop or the feed" "! grep -nE 'sudo|chown|as_worker' $KIT/scripts/supervise.py $KIT/scripts/lane-events.sh"
 python3 -c "import json,sys; d=json.load(open(sys.argv[1])); d['worker_user']=''; json.dump(d,open(sys.argv[1],'w'))" "$ORG2/org.json"
@@ -235,12 +238,38 @@ python3 -c "import json,sys; d=json.load(open(sys.argv[1])); d['repo']=sys.argv[
   "$ORG/org.json" "$SP/repo" "$SP/sup.sh" "$SP/org/org.json"
 bash "$KIT/scripts/lanes.sh" "$SP/org" new s "space goal" 1 false >/dev/null 2>&1
 fill "$SP/org/lanes/s/context.md" "$SP/org/lanes/s/supervisor-brief.md"
-src=0; (cd "$SP/org/lanes/s" && ORG_ROOT="$SP/org" timeout 120 python3 "$SP/org/supervise.py" "$SP/org/lanes/s" 1 >/dev/null 2>&1) || src=$?
+src=0; (cd "$SP/org/lanes/s" && ORG_ROOT="$SP/org" tmo 120 python3 "$SP/org/supervise.py" "$SP/org/lanes/s" 1 >/dev/null 2>&1) || src=$?
 SL="$SP/org/lanes/s/lane.log"
 check "space: agent ran and reported (rc $src)" "[ $src = 0 ] && grep -q 'agent alpha finished rc=0 report=present' \"$SL\""
 check "space: MERGE ok and the work is on the lane branch" "grep -q 'MERGE lane/s/alpha ok' \"$SL\" && git -C \"$SP/repo\" show lane/s/integration:work-alpha.txt >/dev/null 2>&1"
 check "worker env: ORG_LANE, AGENT_ORG_HEADLESS, no ORG_ROLE" "grep -qx 'lane=s headless=1 role=' \"$SP/org/lanes/s/env-alpha.seen\""
 check "supervisor env: ORG_ROLE=supervisor, AGENT_ORG_HEADLESS" "grep -qx 'role=supervisor headless=1' \"$SP/sup.env\""
+
+# ── B8: no GNU timeout; agents survive a loop restart and are adopted; a deadline kills the process group ──
+echo "== agent lifetime: restart adoption and deadlines"
+check "B8: supervise.py and the feed do not run GNU timeout" "! grep -nE '\"timeout\"|timeout [0-9]' $KIT/scripts/supervise.py $KIT/scripts/lane-events.sh"
+newlane() {   # newlane <org dir> <lane> <agent_timeout_s> <canned outputs...>: an org + filled lane with a canned supervisor
+  local o=$1 ln=$2 t=$3; shift 3; mkdir -p "$o"; cp "$ORG/supervise.py" "$o/"
+  { echo '#!/usr/bin/env bash'; echo "n=\$(( \$(cat '$o/count' 2>/dev/null || echo 0) + 1 )); echo \$n > '$o/count'; cat > '$o/seen-'\$n.txt"
+    echo 'case $n in'; i=1; for c in "$@"; do printf "  %s) printf '%%b' %q;;\n" $i "$c"; i=$((i+1)); done
+    echo "  *) printf '=== DONE ===\\n';;"; echo 'esac'; } > "$o/sup.sh"; chmod +x "$o/sup.sh"
+  python3 -c "import json,sys; d=json.load(open(sys.argv[1])); d['supervisor']['command']=sys.argv[2]; d['agent_timeout_s']=int(sys.argv[3]); json.dump(d,open(sys.argv[4],'w'))" \
+    "$ORG/org.json" "$o/sup.sh" "$t" "$o/org.json"
+  bash "$KIT/scripts/lanes.sh" "$o" new "$ln" "goal" 2 false >/dev/null 2>&1; fill "$o/lanes/$ln/context.md" "$o/lanes/$ln/supervisor-brief.md"
+}
+O3=$SB/org3; L3=$O3/lanes/r
+newlane "$O3" r 120 '=== AGENT name=sleeper model=opus ===\ndo it\n=== END AGENT ===\n' '=== PLAN ===\nwaiting on sleeper\n=== END PLAN ===\n'
+( cd "$L3" && ORG_ROOT=$O3 exec python3 "$O3/supervise.py" "$L3" 1 > "$SB/r1.out" 2>&1 ) & LP=$!
+for _ in $(seq 1 100); do [ -f "$L3/pids/sleeper.json" ] && break; sleep 0.2; done
+kill -9 $LP 2>/dev/null; wait $LP 2>/dev/null
+check "B8: agent survives a killed loop (own session)" "pgrep -f '$L3/wt/sleeper' >/dev/null"
+rrc=0; (cd "$L3" && ORG_ROOT=$O3 tmo 90 python3 "$O3/supervise.py" "$L3" 2 > "$SB/r2.out" 2>&1) || rrc=$?
+check "B8: restarted loop adopts it from its pid file (rc $rrc)" "[ $rrc = 0 ] && has $L3/lane.log 'adopted running agent sleeper'"
+check "B8: adopted agent finishes through the safety net, pid file gone" "grep -q 'agent sleeper finished rc=? report=present' $L3/lane.log && [ ! -e $L3/pids/sleeper.json ] && git -C $REPO rev-parse -q --verify refs/heads/lane/r/sleeper >/dev/null"
+O4=$SB/org4; L4=$O4/lanes/h
+newlane "$O4" h 3 '=== AGENT name=hang model=opus ===\nhang\n=== END AGENT ===\n'
+hrc=0; (cd "$L4" && ORG_ROOT=$O4 tmo 90 python3 "$O4/supervise.py" "$L4" 1 > "$SB/h.out" 2>&1) || hrc=$?
+check "B8: a deadline kills the agent's whole process group (rc $hrc)" "[ $hrc = 0 ] && has $L4/lane.log 'agent hang TIMED OUT' && grep -q 'agent hang finished rc=124' $L4/lane.log && ! pgrep -f '$L4/wt/hang' >/dev/null"
 
 echo "== $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]
