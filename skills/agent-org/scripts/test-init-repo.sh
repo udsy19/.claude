@@ -18,19 +18,11 @@ export HOME="$SB/home"; mkdir -p "$HOME"
 export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.invalid GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.invalid
 unset ORG_ROLE ORG_MAIN_BRANCH AGENT_NAME AGENT_ORG_HEADLESS
 
-vars() {   # vars <file> <main-branch> [omit-key]
-  python3 - "$1" "$2" "${3:-}" <<'EOF'
+vars() {   # vars <file> <main-branch> [omit-key] — from the shared fixture scripts/test-vars.json
+  python3 - "$KIT/scripts/test-vars.json" "$1" "$2" "${3:-}" <<'EOF'
 import json, sys
-v = {"PROJECT": "Demo", "MAIN_BRANCH": sys.argv[2], "MISSION": "first-mission", "MISSION_TITLE": "First mission",
-     "MISSION_GOAL": "Ship the demo", "VISION_ONE_LINER": "A demo", "USERS": "devs", "ACCEPTANCE_BAR": "works",
-     "OWNER_WORDS": "make it work", "NOT_WORKED": "nothing yet", "NEXT_MOVE": "start", "FIRST_TRACK": "core",
-     "FIRST_TRACK_ITEM": "scaffold", "SOURCE_AREAS": "| `src/` | code | src/index.js |",
-     "SUPERVISOR_DESC": "claude, read-only", "WORKER_DESC": "claude", "RUNTIME": "local", "HOST": "localhost",
-     "ORG_ROOT": "~/agent-org", "STATE_BRANCH": "backup/lane-state",
-     "LANE_TABLE": "| core | build it | ~/agent-org/lanes/core | lane/core/* | 2 | no |",
-     "EXTRA_RULINGS": "- **Ship weekly.** A lane that has not landed in seven days says why."}
-v.pop(sys.argv[3], None)
-json.dump(v, open(sys.argv[1], "w"))
+v = json.load(open(sys.argv[1])); v["MAIN_BRANCH"] = sys.argv[3]; v.pop(sys.argv[4], None)
+json.dump(v, open(sys.argv[2], "w"))
 EOF
 }
 yaml_ok() {   # parse with whatever the host has; no new dependency

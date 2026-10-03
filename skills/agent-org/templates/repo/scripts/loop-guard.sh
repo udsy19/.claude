@@ -15,7 +15,11 @@
 set -u
 # Lane workers (supervise.py sets AGENT_NAME) keep no session note: their report is their trail.
 # Blocking them would push parallel branches to edit the shared session files, or to pause the mission.
+# The lane SUPERVISOR's consult is also a headless `claude -p` in the integration checkout, under
+# this same Stop hook: blocking it would hold a judge's turn open over a session note it may not
+# write. supervise.py starts every lane process with AGENT_ORG_HEADLESS=1.
 [ -n "${AGENT_NAME:-}" ] && exit 0
+[ -n "${AGENT_ORG_HEADLESS:-}" ] && exit 0
 ROOT="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 # ORG_MISSION comes from .claude/settings.json's `env` block; read it from there when the
 # hook environment does not carry it, so the guard and the settings cannot disagree.

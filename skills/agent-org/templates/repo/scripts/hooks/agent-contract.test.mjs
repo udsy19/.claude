@@ -29,6 +29,7 @@ const MARKERS = fs.mkdtempSync(path.join(os.tmpdir(), 'org-contract-test-'))
 process.on('exit', () => { try { fs.rmSync(MARKERS, { recursive: true, force: true }) } catch {} })
 const BASE_ENV = { ...process.env }
 delete BASE_ENV.ORG_ROLE   // the suite runs as a subagent unless a case says otherwise
+delete BASE_ENV.AGENT_NAME; delete BASE_ENV.AGENT_ORG_HEADLESS   // ...and as an interactive one
 function run(payload, env = {}) {
   try {
     const out = execFileSync('node', [HOOK], {
@@ -216,6 +217,29 @@ check('(d) a payload with no tool_name fails OPEN', run({ session_id: sid() }).c
     fs.writeFileSync(agents, fs.readFileSync(agents, 'utf8').replaceAll('.claude/settings.json', '.claude/settings'))
     check('(i) a contract that stops naming .claude/settings.json FAILS the gate', gate(tmp) === 1)
   } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+}
+
+// (j) LANE PROCESSES. supervise.py starts every lane process with AGENT_ORG_HEADLESS=1; workers
+// also carry AGENT_NAME. The lane supervisor may write nothing; a worker may not write the
+// overseer's trail or any memory. Each refusal has a control: the same write, interactive.
+{
+  const W = { AGENT_ORG_HEADLESS: '1', AGENT_NAME: 'alpha', ORG_LANE: 'core' }
+  const afterDelivery = (p, env) => { const s = sid(); run(edit(ORDINARY, s), env); return run(edit(p, s), env) }
+  const LANE_SUP = { AGENT_ORG_HEADLESS: '1', ORG_ROLE: 'supervisor' }
+  const supAny = afterDelivery(ORDINARY, LANE_SUP)
+  check('(j) the LANE SUPERVISOR is refused even an ordinary file', supAny.code === 2 && /read-only/.test(supAny.err), `exit ${supAny.code}`)
+  check('(j) ...and the plan, which ORG_ROLE=supervisor alone would allow', afterDelivery('vault/Plan.md', LANE_SUP).code === 2)
+  check('(j) CONTROL — the OVERSEER (same role, interactive) may edit the plan', afterDelivery('vault/Plan.md', { ORG_ROLE: 'supervisor' }).code === 0)
+  for (const p of ['vault/Sessions/2026-10-03-x.md', 'vault/Home.md', 'vault/Reports/audits/SESSION-REGISTRY.md',
+    '.claude/agent-memory/builder/notes.md', path.join(os.homedir(), '.claude/projects/-srv-repo/memory/feedback.md')]) {
+    const r = afterDelivery(p, W)
+    check(`(j) a lane WORKER writing ${p.replace(os.homedir(), '~')} is REFUSED`, r.code === 2 && /lane worker does not write/.test(r.err), `exit ${r.code}`)
+  }
+  check('(j) ...a worker sub-agent (AGENT_NAME inherited, no HEADLESS) too', afterDelivery('vault/Home.md', { AGENT_NAME: 'alpha' }).code === 2)
+  check('(j) CONTROL — an interactive session may write its session note', afterDelivery('vault/Sessions/2026-10-03-x.md', {}).code === 0)
+  check('(j) CONTROL — a lane worker may write its code and its report', afterDelivery(ORDINARY, W).code === 0 &&
+    afterDelivery('vault/Reports/some-report.md', W).code === 0)
+  check('(j) CONTROL — a file merely NAMED memory is not memory', afterDelivery('src/memory/cache.js', W).code === 0)
 }
 
 // A COUNT, NOT JUST AN ABSENCE OF FAILURES: a run in which no check executed must not read
