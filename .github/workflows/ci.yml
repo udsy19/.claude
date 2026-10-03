@@ -1,0 +1,75 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck (hooks + agent-org)
+        run: |
+          shellcheck --version
+          shellcheck hooks/*.sh $(find skills/agent-org -name '*.sh') skills/agent-org/scripts/build-queue
+      - name: JSON parses
+        run: |
+          for f in settings.json .mcp.json skills/agent-org/scripts/org.example.json \
+                   skills/agent-org/templates/repo/.claude/settings.json; do
+            jq -e . "$f" > /dev/null || { echo "invalid JSON: $f"; exit 1; }
+          done
+      - name: every skill has name + description frontmatter
+        # Parsed as YAML (Ruby's stdlib ships on both runner images): descriptions may be multi-line scalars.
+        run: |
+          ruby -ryaml -e '
+            bad = Dir["skills/*/SKILL.md"].sort.reject do |f|
+              m = File.read(f).match(/\A---\n(.*?)\n---\n/m)
+              fm = (YAML.safe_load(m[1]) rescue nil) if m
+              fm.is_a?(Hash) && fm["name"].to_s.strip != "" && fm["description"].to_s.strip != ""
+            end
+            bad.each { |f| puts "invalid or missing name/description frontmatter: #{f}" }
+            exit(bad.empty? ? 0 : 1)'
+      - name: no tracked bytecode
+        run: |
+          if git ls-files | grep -E '(__pycache__/|\.pyc$)'; then echo "tracked bytecode above"; exit 1; fi
+      - name: README skill count matches skills/
+        run: |
+          n=$(find skills -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
+          grep -q "skills-$n-" README.md || { echo "README badge does not say $n skills"; exit 1; }
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: git identity for test repos
+        run: |
+          git config --global user.email ci@example.invalid
+          git config --global user.name ci
+          git config --global init.defaultBranch main
+      - name: node --test (every *.test.mjs)
+        run: node --test $(git ls-files '*.test.mjs')
+      - name: loop-guard
+        run: bash skills/agent-org/templates/repo/scripts/loop-guard.count.test.sh
+      - name: supervise loop (script backend)
+        run: bash skills/agent-org/scripts/test-supervise.sh
+      - name: host scripts (runtime modes, timers, snapshot)
+        run: bash skills/agent-org/scripts/test-host.sh
+      - name: init-repo e2e + org-board
+        run: bash skills/agent-org/scripts/test-init-repo.sh
+      - name: headless path audit
+        run: bash skills/agent-org/scripts/test-headless.sh
+      - name: /setup permutation matrix
+        run: bash skills/agent-org/scripts/test-setup-matrix.sh
+      - name: local org end to end (G)
+        run: bash skills/agent-org/scripts/test-local-e2e.sh

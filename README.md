@@ -287,7 +287,7 @@ Agent Skills can execute code (scripts, and `!`-prefixed shell blocks run on loa
 
 ## CI
 
-`.github/workflows/ci.yml` runs on every push and PR. A lint job (Ubuntu) runs shellcheck over the hooks and the agent-org scripts, checks that every JSON config parses, that every `skills/*/SKILL.md` has YAML frontmatter with `name` and `description`, that no Python bytecode is tracked, and that the README's skill count matches `skills/`. A test job on Ubuntu and macOS runs every `*.test.mjs` under `node --test`, the loop-guard cases, and the agent-org suites: the lane loop, the host scripts, the init-repo e2e with `org-board.sh`, the headless audit and the `/setup` permutation matrix. All of them use fakes; none needs a login or the network.
+`.github/workflows/ci.yml` runs on every push and PR. A lint job (Ubuntu) runs shellcheck over the hooks and the agent-org scripts, checks that every JSON config parses, that every `skills/*/SKILL.md` has YAML frontmatter with `name` and `description`, that no Python bytecode is tracked, and that the README's skill count matches `skills/`. A test job on Ubuntu and macOS runs every `*.test.mjs` under `node --test`, the loop-guard cases, and the agent-org suites: the lane loop, the host scripts, the init-repo e2e with `org-board.sh`, the headless audit, the `/setup` permutation matrix, and a local org run end to end (setup, two lanes, refused landings, a restart adopting a running agent, the hourly snapshot, STOP). All of them use fakes; none needs a login or the network.
 
 ## Acknowledgements & credits
 
