@@ -48,7 +48,8 @@ Task arrives
     ├── Writing docs/ADRs? ───────────→ documentation-and-adrs
     ├── Adding logs/metrics/alerts? ───→ observability-and-instrumentation
     ├── Ship small & often / reduce cycle time? → ship-fast
-    └── Deploying/launching? ─────────→ shipping-and-launch
+    ├── Deploying/launching? ─────────→ shipping-and-launch
+    └── Long-running multi-lane agent org (supervisors + workers + sub-agents)? → agent-org
 ```
 
 ## Core Operating Behaviors
@@ -211,3 +212,4 @@ Not every task needs every skill. A bug fix might only need: `debugging-and-erro
 | Ship | ship-fast | Small batches, low WIP, deploy often behind flags — bias to shippable increments |
 | Ship | shipping-and-launch | Pre-launch checklist, monitoring, rollback plan |
 | Any | memory-discipline | What to persist to native memory (and what not) — concise MEMORY.md, right home for each fact |
+| Any | agent-org | One prompt → a supervised agent organisation: lane supervisors, workers, sub-agents, Obsidian vault, 3-layer memory, handoffs, recovery |

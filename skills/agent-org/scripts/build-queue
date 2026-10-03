@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Machine-wide build queue: N parallel slots for heavy build/test commands, shared by every lane's agents.
+# Install as /srv/bin/<tool> (e.g. cargo) FIRST on the workers' PATH, pointing REAL at the real binary.
+#   ln -s /srv/bin/build-queue /srv/bin/cargo ; export REAL_cargo=$HOME/.cargo/bin/cargo
+# Light subcommands pass straight through; heavy ones wait for a free slot.
+tool=$(basename "$0"); real_var="REAL_${tool}"; real=${!real_var:-$(command -v -a "$tool" | grep -v "^/srv/bin/" | head -1)}
+SLOTS=${BUILD_QUEUE_SLOTS:-3}; HEAVY=${BUILD_QUEUE_HEAVY:-"build test run check clippy bench"}
+case " $HEAVY " in *" $1 "*) ;; *) exec "$real" "$@";; esac
+while true; do
+  for s in $(seq 1 "$SLOTS"); do
+    lock=/srv/build-queue.$tool.$s; exec 9>"$lock"; chmod 666 "$lock" 2>/dev/null
+    if flock -n 9; then exec "$real" "$@"; fi
+  done
+  sleep 5
+done

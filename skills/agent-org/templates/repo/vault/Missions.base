@@ -1,0 +1,27 @@
+filters:
+  and:
+    - file.inFolder("Missions")
+    - file.ext == "md"
+properties:
+  status:
+    displayName: Status
+  owner:
+    displayName: Owner
+views:
+  - type: table
+    name: Active
+    filters:
+      and:
+        - status != "done"
+        - status != "archived"
+    order:
+      - file.name
+      - status
+      - owner
+      - updated
+  - type: table
+    name: All
+    order:
+      - file.name
+      - status
+      - updated

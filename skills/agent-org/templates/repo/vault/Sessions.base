@@ -1,0 +1,35 @@
+filters:
+  and:
+    - file.inFolder("Sessions")
+    - file.ext == "md"
+formulas:
+  age_days: (now() - file.mtime).days.round(0)
+properties:
+  line:
+    displayName: Line
+  outcome:
+    displayName: Outcome
+  formula.age_days:
+    displayName: Days ago
+views:
+  - type: table
+    name: Recent
+    order:
+      - file.name
+      - line
+      - outcome
+      - formula.age_days
+    sort:
+      - property: file.name
+        direction: DESC
+    limit: 10
+  - type: table
+    name: All
+    order:
+      - file.name
+      - date
+      - line
+      - outcome
+    sort:
+      - property: file.name
+        direction: DESC

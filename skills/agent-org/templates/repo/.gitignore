@@ -1,0 +1,13 @@
+# agent-org: per-machine and per-session state (never committed)
+vault/.obsidian/workspace*
+vault/.obsidian/cache
+vault/_log/agents.jsonl
+vault/_log/usage.jsonl
+vault/_log/ratelimit.jsonl
+vault/_log/usage-hook.err
+vault/_log/*.lock
+vault/.loop-blocks
+graphify-out/
+.DS_Store
+__pycache__/
+*.pyc

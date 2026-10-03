@@ -114,6 +114,28 @@ main agent → research sub-agent (reads 50 files) → digest → main agent con
 
 ---
 
+### 6. Supervised lanes (long-running agent organisation)
+
+When the work is a standing product effort over days or weeks, not one task, run it as an organisation: one read-only supervisor per lane plans and judges, workers build in their own worktrees, and the owner rules on decisions through a file the supervisor reads every consult.
+
+```
+owner ↔ overseer (this session) → lane supervisor → workers (own worktree + branch) → sub-agents
+          goals go down · evidence (artifacts, screenshots, gaps) comes up · ASK_OWNER surfaces to the owner
+```
+
+**Use when:**
+- Several independent goals (lanes) need to progress in parallel for longer than one session
+- Work must survive restarts, usage limits and context loss (state lives in git, the vault and memory, not in a conversation)
+- The owner wants to rule on direction, not drive each step
+
+**Why it is not anti-pattern A, B or D:** the supervisor is not a paraphrasing router. It holds the lane's goal, rulings and memory, judges evidence, and decides merges, which is domain value no slash command carries. Workers never call other personas; their sub-agents report only to them (depth 1 below the worker). Human checkpoints are kept, not removed: ASK_OWNER questions and `rulings.md` are the owner's decision points.
+
+**Cost:** high and continuous (a supervisor consult per cycle plus up to N workers per lane). Set it up only for work that justifies it, never for a single feature.
+
+**On Claude Code:** the `agent-org` skill sets the whole thing up from one prompt (`/agent-org`). Read `skills/agent-org/docs/HIERARCHY.md` for the chain of command and the failure each guard exists for.
+
+---
+
 ## Claude Code compatibility
 
 This catalog is harness-agnostic, but most readers will run it on Claude Code. Here's how each pattern maps onto Claude Code's primitives — and where the platform enforces our rules for us.
@@ -345,6 +367,8 @@ An agent that calls `/spec`, then `/plan`, then `/build`, etc. on the user's beh
 When considering a new orchestrated workflow, walk this flow:
 
 ```
+Is this a standing, multi-goal effort that must run for days and survive restarts?
+└── Yes → Supervised lanes (Pattern 6, the agent-org skill). Stop.
 Is the work one perspective on one artifact?
 ├── Yes → Direct invocation. Stop.
 └── No  → Will the same composition repeat?

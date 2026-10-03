@@ -1,0 +1,10 @@
+{
+  "useMarkdownLinks": false,
+  "newLinkFormat": "relative",
+  "attachmentFolderPath": "../evidence/vault-attachments",
+  "showUnsupportedFiles": true,
+  "userIgnoreFilters": [
+    "Archive/",
+    "_log/"
+  ]
+}

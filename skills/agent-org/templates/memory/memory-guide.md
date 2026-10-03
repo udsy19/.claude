@@ -1,0 +1,36 @@
+# Memory: what goes where (three layers, never duplicated)
+
+| layer | holds | lifetime | who writes |
+|---|---|---|---|
+| **Claude auto-memory** (`~/.claude/projects/<proj>/memory/`) | WHO the owner is and HOW they want work done: preferences, standing rulings, corrections and their reasons, where things live and why | across all sessions | the overseer, the moment the owner states a rule or corrects something |
+| **Vault** (`vault/`) | WHAT the project knows: vision, decisions, designs, reports, research, session handoffs | the project's life (in git) | every agent: reports, session notes, write-backs |
+| **Lane state** (`<ORG_ROOT>/lanes/*`) | the live working set: supervisor plan, consult outputs, worker reports, owner Q&A, renders | the current push, snapshotted hourly to git | the loops, plus the overseer appending owner answers |
+
+## Memory file format
+```markdown
+---
+name: kebab-slug
+description: one line used to decide relevance
+metadata:
+  type: user | feedback | project | reference
+---
+The fact. For feedback/project, add **Why:** and **How to apply:** lines. Link related memories with [[name]].
+```
+
+The supervisor's own lane-local memory is a fourth, narrower store: `lanes/<lane>/lane-memory.md`, its
+append-only LEARN journal (see `vault/Design/lanes-and-supervisors.md` § Persistent supervisor memory).
+Lessons that hold beyond the lane are promoted by the overseer into `vault/Index.md`.
+
+## Rules
+- **Auto-memory is the overseer's alone.** Workers and sub-agents never use a `memory:` frontmatter or
+  `.claude/agent-memory/`: per-branch copies of a memory store conflict on merge and fork the truth.
+  Their durable knowledge goes in their report and the vault.
+- **Check first:** before saving, look for an existing memory that covers it, and update that instead of
+  duplicating.
+- **Don't save what's already recorded:** anything the repo or vault already records (code structure, git
+  history) stays out of memory.
+- **Convert relative dates to absolute** ("Thursday" → 2026-10-08).
+- **Fix wrong memories:** when a memory proves wrong, fix or delete it. Recalled memories are point-in-time;
+  verify any file or flag they name before acting on it.
+- **Every owner correction becomes a feedback memory, with its why.** That is how the next session doesn't
+  repeat the mistake.
