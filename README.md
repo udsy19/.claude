@@ -125,7 +125,7 @@ Everything degrades gracefully if a dependency is missing, but for full function
 
 ## What's inside
 
-40 skills organized by development phase, the meta-skill that wires discovery, and `agent-org` for running agents as a supervised organisation.
+41 skills: 40 organized by development phase (including the meta-skill that wires discovery), plus `agent-org` for running agents as a supervised organisation.
 
 <details open>
 <summary><b>Define &amp; Plan</b></summary>
