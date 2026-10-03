@@ -172,6 +172,8 @@ check('(d) a payload with no tool_name fails OPEN', run({ session_id: sid() }).c
     ['what was already tried', /vault\/Index\.md/],
     ['the one-row reader', /scripts\/plan-row\.mjs/],
     ['who already implements X', /scripts\/where\.mjs/],
+    ['the memory ban, Claude Code auto-memory included', /Claude Code auto-memory/],
+    ['the reversible default (headless runs never wait)', /reversible\s+default/],
   ]
   for (const card of cards) {
     const txt = fs.readFileSync(path.join(dir, card), 'utf8')

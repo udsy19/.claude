@@ -19,7 +19,7 @@ Write a failing test before writing the code that makes it pass. For bug fixes, 
 
 **When NOT to use:** Pure configuration changes, documentation updates, or static content changes that have no behavioral impact.
 
-**Related:** For browser-based changes, combine TDD with runtime verification using Chrome DevTools MCP — see the Browser Testing section below.
+**Related:** In a repo that ships `.claude/rules/goals-not-tests.md` (an agent-org project), that rule says what proves *done*: a green suite is necessary, and the real product path is the proof. For browser-based changes, combine TDD with runtime verification using Chrome DevTools MCP — see the Browser Testing section below.
 
 ## The TDD Cycle
 

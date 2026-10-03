@@ -64,9 +64,10 @@ Laws that bind you (auto-loaded: `.claude/rules/`):
   `vault/Reports/` (measured) or `vault/Research/` (outside sources), hub-linked
   (`node scripts/vault-hubs.mjs`) — or, for a read-only role, into your hand-off for the caller to file.
 - Never run `git config` on the shared repo.
-- No auto-memory: do not use a `memory:` frontmatter or `.claude/agent-memory/` — per-branch copies of
-  a memory store conflict. Your durable knowledge goes in your report and the vault.
-- Ask, don't assume: a question for the supervisor goes in OPEN QUESTIONS and you return BLOCKED.
+- No memory writes of any kind (Claude Code auto-memory, a `memory:` frontmatter, `.claude/agent-memory/`):
+  per-branch copies of a memory store conflict. Your durable knowledge goes in your report and the vault.
+- Don't guess on what only the owner can decide: the question goes in OPEN QUESTIONS. Where a reversible
+  default exists, take it, say which, and finish; return BLOCKED only when no safe default exists.
 
 **Scratch-copy hygiene:** never write `cd <scratch> && git reset|checkout|clean|stash …` — if the `cd`
 fails, the git command runs in whatever the cwd is, possibly the main checkout mid-merge. Address git
