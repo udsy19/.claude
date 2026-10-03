@@ -37,10 +37,10 @@ channel is a FILE or a tool call somebody can read afterwards.
 
 | from → to | channel | written by |
 |---|---|---|
-| supervisor → worker | the `=== AGENT ===` brief, prefixed with `agent-rules.md` (which sends the worker to `context.md` first) | `supervise.py` from the consult |
+| supervisor → worker | the `=== AGENT ===` brief, prefixed with `agent-rules.md` and `context.md`, given to the worker on stdin (no prompt argument, so no size limit) | `supervise.py` from the consult |
 | worker → supervisor | the report file `reports/<round>-<name>.md` (checkpointed; opens with `## TL;DR`), images in `renders/<agent>/`, and the worker's branch | the worker |
 | worker ↔ sub-agent | the Agent tool's prompt and its return value; findings are folded into the WORKER's report | the worker |
-| supervisor → owner | `=== ASK_OWNER ===` → `owner-questions.md` (surfaced by the event feed) | `supervise.py` |
+| supervisor → owner | `=== ASK_OWNER ===` → `owner-questions.md` (surfaced by the event feed); a daily spend cap reached is asked the same way | `supervise.py` |
 | owner → supervisor | `owner-answers.md` (raw, appended verbatim and dated) and `rulings.md` (the law in force, curated) | the overseer |
 | lane ↔ lane | never direct: through `owner-answers.md` notes or the vault | the overseer / the vault |
 | anyone → a protected doc | `node scripts/propose.mjs` → `vault/_log/proposals.jsonl`, answered by the supervisor | the proposer |
@@ -75,7 +75,8 @@ A finding that should BIND becomes a decision: the supervisor or owner writes it
   (`lane_memory_consolidate_every`) the supervisor emits a `MEMORY_CONSOLIDATED` rewrite and the raw
   journal is archived as `lane-memory.archive-<stamp>.md`, never lost. `state-snapshot.sh` backs it up
   hourly with the rest of the lane state.
-- **What a consult carries (the prompt budget).** `rulings.md` in full plus the newest 10 raw
+- **What a consult carries (the prompt budget).** The project's `.claude/rules/owner-rulings.md` and the
+  lane's `rulings.md` in full, plus the newest 10 raw
   `owner-answers.md` entries (a lane without `rulings.md` gets the whole log); per report its `## TL;DR`,
   first ~2k and last ~3k characters; the lane branch's `git log -15`, its `diff --stat` against main and
   that of each branch just merged, landed or finished (≤ 6k chars); and up to 12 images: `renders/owner/`
@@ -86,9 +87,11 @@ A finding that should BIND becomes a decision: the supervisor or owner writes it
 - **[[Index]]** (generated, with the overseer's promoted-lessons block carried verbatim) is injected
   into every consult too, so a supervisor sees what the whole project has decided, measured, tried
   and rejected.
-- **Claude auto-memory** (`~/.claude/projects/<project>/memory/`) is the OVERSEER's alone: the owner's
-  rulings and corrections. Workers and sub-agents do **not** use the `memory:` frontmatter or
-  `.claude/agent-memory/` — per-branch copies of a memory store conflict on merge and fork the truth.
+- **Claude auto-memory** (`~/.claude/projects/<project>/memory/`) is the OVERSEER's alone: corrections,
+  cross-project preferences, and a pointer to `.claude/rules/owner-rulings.md` (the rulings themselves
+  live there). Workers and sub-agents write no memory of any kind (native auto-memory, `memory:`
+  frontmatter, `.claude/agent-memory/`) — per-branch copies of a memory store conflict on merge and fork
+  the truth; the contract hook refuses a worker's writes to auto-memory and `.claude/agent-memory/`.
   A worker's durable knowledge goes in its report and the vault.
 - **Sub-agent depth:** verify that your Claude Code version lets a worker's sub-agent spawn further
   agents before relying on it; if nested Agent-tool calls are not allowed, the worker does all the
@@ -98,15 +101,15 @@ A finding that should BIND becomes a decision: the supervisor or owner writes it
 
 | file | role |
 |---|---|
-| `{{ORG_ROOT}}/supervise.py <lane-root>` | One loop per lane. **Rolling:** the supervisor is consulted whenever any worker finishes. A restarted loop adopts running workers. Directives: `PLAN`, `AGENT`, `MERGE`, `LAND` (lanes with may_land), `KILL`, `ASK_OWNER`, `LEARN`, `DONE`. Hubs are regenerated after every MERGE/LAND. Logs `NO ACTIONABLE BLOCK` and `REPORT OVERDUE` (90 min). |
+| `{{ORG_ROOT}}/supervise.py <lane-root>` | One loop per lane, run by the org's one user. **Rolling:** the supervisor is consulted whenever any worker finishes. Each worker runs in its own process group with a deadline in `pids/<name>.json`; a restarted loop adopts running workers from those files. Directives: `PLAN`, `AGENT`, `MERGE`, `LAND` (lanes with may_land), `KILL`, `ASK_OWNER`, `LEARN`, `DONE`; names and refs are validated, anything else is `REFUSED`. LAND needs `{{MAIN_BRANCH}}` checked out in the repo and the landing gates (plan-ownership, sprawl, protected-paths, run with main's gate code) to pass; a refusal is written to `reports/NNNN-zz-land-refused-<branch>.md`. Daily caps per lane (consults, agent starts, agent-hours) log `BUDGET` and idle the lane until midnight UTC; a `TOTAL` line keeps the count. Hubs are regenerated after every MERGE/LAND. Logs `NO ACTIONABLE BLOCK` and `REPORT OVERDUE` (90 min). |
 | `lanes/<lane>/context.md`, `supervisor-brief.md`, `agent-rules.md`, `owner-answers.md`, `rulings.md`, `lane.json` | The lane's brief and settings. The owner's answers are appended to `owner-answers.md`; the ones in force are curated into `rulings.md`. |
 | `lanes/<lane>/lane-memory.md` | The supervisor's LEARN journal (above). |
 | `lanes/<lane>/reports/`, `renders/<agent>/`, `renders/owner/`, `plan.md`, `loop-state.json` | Worker reports (`<round>-<name>.md`, zero-padded so they sort; `## TL;DR` first; checkpoint within 1 h, updated every 2 h), worker images and the owner's pinned references, the supervisor's plan, and the loop's own state (last consult time, overdue warnings, notices for the next prompt). |
-| `lanes.sh` | Lane management: `new`, `start`, `restart` (keeps workers alive), `stop`, `status`, `gc` (hourly from cron: merged, finished worktrees + build dirs, renders > 14 days). |
+| `lanes.sh` | Lane management: `new`, `start`, `restart` (keeps workers alive), `stop`, `status`, `gc` (hourly — launchd, crontab, a systemd user timer or tmux: merged, finished worktrees + build dirs, renders > 14 days). `start` resumes a stopped lane. |
 | `lane-metrics.py` | Per-lane, per-day consults, dispatches, finishes, missing reports, timeouts, merges, conflicts, lands, KILLs, NO ACTIONABLE BLOCKs, median dispatch→finish and dispatch→merge. |
-| `git-sync.sh` | Every 5 min: ff-only `main` both ways (never force; DIVERGED is logged), pushes every work branch, re-owns `.git` to the worker user. |
-| `state-snapshot.sh` | Hourly: copies all lane state that lives outside git to branch `{{STATE_BRANCH}}`. |
-| `lane-events.sh` | The overseer's event feed: dispatches, finishes, merges, landings, owner questions, usage limits, and a worker-auth probe. |
+| `git-sync.sh` | Every 5 min: fast-forwards the `main` branch from origin (merging into HEAD only when HEAD is main, else `git fetch origin main:main`; never force; DIVERGED is logged), pushes main only if `sync.push_main` (default false), and pushes every work branch. |
+| `state-snapshot.sh` | Hourly: copies each lane's recovery state (`plan.md`, `lane-memory*.md`, `rulings.md`, `owner-questions.md`, `lane.json`, `loop-state.json`, `renders/owner` and `renders/latest`, plus anything in `state_backup.include`) and `org.json` without secret-shaped keys to branch `{{STATE_BRANCH}}`, and pushes it to origin — anyone who can read origin can read it. |
+| `lane-events.sh` | The overseer's event feed: dispatches, finishes, merges, landings and `REFUSED` blocks, owner questions, usage limits, `BUDGET`/`TOTAL`, `UNFILLED`, `SUPERVISOR ERROR`, and a worker-auth probe. |
 | `build-queue` | Machine-wide slots for heavy builds, so parallel workers don't starve the box. |
 
 ## Failure modes this design already guards against
@@ -120,7 +123,8 @@ Each one happened in practice.
   an 8 h timeout and checkpoint reports.
 - **The slowest agent blocked the lane:** guard: rolling dispatch.
 - **Host loss:** guards: everything pushed every 5 min, hourly lane-state backup, a bootstrap kit.
-- **Root-owned `.git`:** guard: re-own every sync, and run git as the worker user.
+- **Root-owned `.git`:** guard: one user runs the whole org and owns the repo; nothing runs `sudo` or
+  re-owns a repository.
 - **A test polluted the shared `.git/config`:** guard: never run `git config` on the shared repo.
 - **Detached-HEAD work stranded:** guard: the safety net pushes `HEAD`.
 - **Worker login expired overnight:** guard: an auth probe in the event feed.
@@ -135,8 +139,14 @@ Each one happened in practice.
 
 ## Recovery
 
-1. Run `bootstrap-host.sh`.
-2. Clone the repo.
-3. Restore `{{ORG_ROOT}}/lanes/*` from branch `{{STATE_BRANCH}}`.
-4. The owner re-does the logins.
-5. Run `lanes.sh start`.
+1. Clone the repo, as the user that will run the org.
+2. Restore `{{ORG_ROOT}}/lanes/*` from branch `{{STATE_BRANCH}}`, and `org.json` from it with its
+   secrets re-added.
+3. Run `bootstrap-host.sh` (remote: phase 1 as root, then phase 2 as the worker).
+4. The snapshot does not carry the lane briefs or the integration worktree: run
+   `lanes.sh new <lane> "<goal>" <parallel> <may_land>` for each lane with the values in its restored
+   `lane.json` (it rewrites `lane.json`, refills only missing files and re-creates `int/`), then refill
+   each `context.md` and the GOAL of `supervisor-brief.md` — or list those two in
+   `state_backup.include` beforehand so they are restored too.
+5. The owner re-does the logins.
+6. Run `lanes.sh start`.

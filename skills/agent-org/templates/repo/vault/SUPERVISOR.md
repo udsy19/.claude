@@ -121,6 +121,11 @@ decision is that it gets made again, worse, by someone with less context.**
 4. Lift durable findings into the vault (a report, a decision), regenerate the hubs and the Index,
    and keep [[Home]] NOW true.
 
+A lane supervisor's `LAND` is gated by its loop instead: it needs main checked out in the repo and
+`plan-ownership.mjs`, `sprawl.mjs` and `protected-paths.mjs` passing on the candidate (with main's gate
+code); a refusal is the lane's `reports/NNNN-zz-land-refused-<branch>.md` and a `REFUSED` line in the
+event feed. Read it before landing that branch by hand.
+
 ## 7. What you are actually optimising
 
 Not agents started. Not rows opened. **Rows finished, per token.** And the thing that actually
