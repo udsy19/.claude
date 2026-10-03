@@ -299,6 +299,7 @@ O6=$SB/org6; L6=$O6/lanes/c
 newlane "$O6" c 120
 python3 -c "import json,sys; d=json.load(open(sys.argv[1])); d['supervisor']={'backend':'claude','model':'sup-model'}; json.dump(d,open(sys.argv[1],'w'))" "$O6/org.json"
 crc=0; (cd "$L6" && ORG_ROOT=$O6 tmo 60 python3 "$O6/supervise.py" "$L6" 1 > "$SB/c.out" 2>&1) || crc=$?
+check "A2: claude supervisor is read-only by allowlist" "grep -q -- '--tools Read,Grep,Glob,WebSearch,WebFetch --disallowedTools mcp__\\* --dangerously-skip-permissions' $L6/claude-sup.args && ! grep -qwE 'Bash|Edit|Write|MultiEdit|NotebookEdit|LS' $L6/claude-sup.args"
 check "D9: claude supervisor gets its prompt on stdin, none in argv (rc $crc)" "[ $crc = 0 ] && has $L6/lane.log 'supervisor declared DONE' && ! grep -q 'CONSULT' $L6/claude-sup.args && grep -q '^# CONSULT 1' $L6/claude-sup.stdin && [ \"\$(tail -n 1 $L6/claude-sup.stdin)\" = 'Follow the supervisor brief at the top of this prompt verbatim: emit your blocks now.' ]"
 
 echo "== $PASS passed, $FAIL failed"

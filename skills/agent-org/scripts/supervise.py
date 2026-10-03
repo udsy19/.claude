@@ -38,6 +38,7 @@ LOG = f"{R}/lane.log"
 MAX_PAR = int(LANE.get("max_parallel", 2))
 AGENT_TIMEOUT = int(ORG.get("agent_timeout_s", 8 * 3600))
 CONSULT_TIMEOUT = int(ORG.get("consult_timeout_s", 5400))
+SUPERVISOR_TOOLS = "Read,Grep,Glob,WebSearch,WebFetch"         # a Claude supervisor reads and researches, nothing else
 REPORT_OVERDUE_S = int(ORG.get("report_overdue_s", 90 * 60))   # a running agent with no report file after this: warn once
 POLL_S = int(ORG.get("poll_interval_s", 30))
 IDLE_WAIT_S = int(ORG.get("idle_wait_s", 1200))              # nothing running: wait this long for owner answers / changes
@@ -243,8 +244,10 @@ def consult(prompt, out, cwd, images=()):
             # The whole prompt goes on stdin with NO prompt argument: `claude -p` then reads stdin as the prompt.
             # (stdin + a `-p "…"` argument is read as attachment content, which overflowed the context at 300 KiB,
             # and one argv string is capped at 128 KiB on Linux.)
-            cmd = (f"cd {q(cwd)} && {q(CLAUDE)} -p --model {q(SUP['model'])} "
-                   f"--disallowedTools Edit,Write,NotebookEdit,Monitor --dangerously-skip-permissions")
+            # Read-only by ALLOWLIST: --tools restricts the built-in set (--allowedTools would only pre-approve);
+            # naming Glob/Grep brings them back on macOS/Linux; --tools does not cover MCP tools, so deny those.
+            cmd = (f"cd {q(cwd)} && {q(CLAUDE)} -p --model {q(SUP['model'])} --tools {SUPERVISOR_TOOLS} "
+                   f"--disallowedTools 'mcp__*' --dangerously-skip-permissions")
             p = run_bounded(["bash", "-c", f"env {env_str({'ORG_ROLE': 'supervisor'})} bash -c {q(cmd)}"], CONSULT_TIMEOUT,
                             input=full + "\n\nFollow the supervisor brief at the top of this prompt verbatim: emit your blocks now.\n")
         text = p.stdout
