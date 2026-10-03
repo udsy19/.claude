@@ -249,5 +249,13 @@ open(sys.argv[2],"w").write(src[i:j]+"\n")' "$SC/bootstrap-host.sh" "$SB/to.sh"
 out=$(bash -c ". '$SB/to.sh'; to 1 '$SB/slowclaude'"); r=$?
 check "the probe gives up after its timeout (exit 124, says so)" "[ $r = 124 ] && [ \"$out\" = 'no answer in 1s' ]"
 
+# lanes.sh status lists running agents from supervise.py's pid files (prompts are on stdin, so not in argv)
+mkdir -p "$SB/st/lanes/core/pids" "$SB/st/lanes/ui/pids"; printf '{"repo": "%s"}\n' "$SB/repo" > "$SB/st/org.json"; sleep 30 & live=$!
+echo "{\"pid\": $live, \"deadline\": 0}" > "$SB/st/lanes/core/pids/a1.json"
+echo '{"pid": 999999, "deadline": 0}' > "$SB/st/lanes/ui/pids/gone.json"
+# shellcheck disable=SC2034  # st is read by the check string, which check() evals
+st=$(bash "$SC/lanes.sh" "$SB/st" status 2>&1); kill "$live" 2>/dev/null; wait "$live" 2>/dev/null
+check "status: a live agent is listed from its pid file, a dead one is not" "printf '%s' \"\$st\" | grep -qx 'running: core/a1 (pid $live)' && ! printf '%s' \"\$st\" | grep -q gone"
+
 echo "== $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

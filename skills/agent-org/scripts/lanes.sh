@@ -49,8 +49,10 @@ PY
       start_one "$k"; done;;
   stop) touch "$ORG_ROOT/lanes/${1:?name}/STOP"; echo "STOP set for $1";;
   status) for k in $(all); do echo "== $k: $(tail -1 "$ORG_ROOT/lanes/$k/lane.log" 2>/dev/null)"; done
-    # shellcheck disable=SC2009  # BSD pgrep -a prints PIDs only, so read full command lines from ps
-    ps -ww -eo args | grep -oE "You are agent .[a-z0-9-]+." | sort -u || true;;   # ps, not pgrep -a (BSD pgrep prints PIDs only)
+    for f in "$ORG_ROOT"/lanes/*/pids/*.json; do   # supervise.py's pid file per agent: the authoritative list (prompts are stdin, not argv)
+      [ -f "$f" ] || continue; p=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["pid"])' "$f" 2>/dev/null) || continue
+      kill -0 "$p" 2>/dev/null && echo "running: $(basename "$(dirname "$(dirname "$f")")")/$(basename "$f" .json) (pid $p)"
+    done; true;;
   gc) for k in $(named_or_all "$@"); do D=$ORG_ROOT/lanes/$k
       P=$(python3 -c "import json,sys;d=json.load(open(sys.argv[1]));print(d.get('branch_prefix','lane/'+d['name']))" "$D/lane.json")
       before=$(du -sk "$D" | cut -f1); nw=0
