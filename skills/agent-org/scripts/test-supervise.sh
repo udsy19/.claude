@@ -29,6 +29,7 @@ git init -q -b main "$REPO" && cd "$REPO" || exit 2
 mkdir -p vault/Reports scripts/lib
 cp "$KIT/templates/repo/scripts/vault-hubs.mjs" scripts/; cp "$KIT/templates/repo/scripts/lib/argv.mjs" scripts/lib/
 printf '# Home\n\nStart here. [[Map]]\n' > vault/Home.md
+printf 'node_modules/\n' > .gitignore; mkdir -p node_modules/dep && echo shared > node_modules/dep/index.js
 mkdir -p .claude/rules && printf '# Owner rulings\n\n- RULING-PROJECT-42: the standing law of the project\n' > .claude/rules/owner-rulings.md
 printf '# Agents\n\nThe contract.\n' > vault/AGENTS.md      # lanes.sh new refuses a main without it
 printf '# First report\n\nMeasured something.\n' > vault/Reports/first.md
@@ -290,8 +291,11 @@ echo "== prompts on stdin"
 O5=$SB/org5; L5=$O5/lanes/b
 newlane "$O5" b 120 '=== AGENT name=bigone model=opus ===\nread the big context\n=== END AGENT ===\n'
 python3 -c "import sys; open(sys.argv[1],'a').write(('context line for the big prompt test. ' * 8 + '\n') * 1100)" "$L5/context.md"
+python3 -c "import json,sys; d=json.load(open(sys.argv[1])); d['worktree_links']=['node_modules','vault/Home.md']; json.dump(d,open(sys.argv[1],'w'))" "$O5/org.json"
 brc=0; (cd "$L5" && ORG_ROOT=$O5 tmo 90 python3 "$O5/supervise.py" "$L5" 1 > "$SB/b.out" 2>&1) || brc=$?
 PF=$(ls "$L5"/prompts/0001-bigone.md 2>/dev/null)
+check "A3: an ignored path is linked into the worktree" "[ -L $L5/wt/bigone/node_modules ] && [ -f $L5/wt/bigone/node_modules/dep/index.js ]"
+check "A3: a tracked path is refused, logged, left as the branch's own file" "has $L5/lane.log \"worktree_links: skipped 'vault/Home.md' for bigone\" && [ ! -L $L5/wt/bigone/vault/Home.md ] && [ -f $L5/wt/bigone/vault/Home.md ]"
 check "D9: worker argv carries no prompt (rc $brc)" "[ $brc = 0 ] && grep -qx -- '-p --dangerously-skip-permissions --model fake-model --disallowedTools Monitor' $L5/args-bigone.txt"
 check "D9: a >300 KiB prompt reaches the worker intact on stdin" "[ \$(wc -c < '$PF') -gt 307200 ] && cmp -s '$PF' $L5/stdin-bigone.txt"
 check "D9: the instruction is the last line of the prompt" "[ \"\$(tail -n 1 '$PF')\" = 'Follow the brief above verbatim, starting now.' ]"

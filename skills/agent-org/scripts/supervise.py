@@ -279,7 +279,11 @@ def worktree(name, base):
         if r.returncode:
             log(f"worktree {name} from {base} FAILED: {r.stderr.strip()[:300]}")
             return None
-        for src in ORG.get("worktree_links", []):          # e.g. node_modules, .env files (copied, never committed)
+        for src in ORG.get("worktree_links", []):          # e.g. node_modules, .env files: shared, never committed
+            # Only IGNORED paths: a link to a tracked path would let a worker write the main checkout's files.
+            if sh(f"cd {q(REPO)} && git check-ignore -q -- {q(src)}").returncode:
+                log(f"worktree_links: skipped {src!r} for {name} — not ignored by git in {REPO}")
+                continue
             sh(f"ln -sfn {q(f'{REPO}/{src}')} {q(f'{wt}/{src}')} 2>/dev/null")
     return wt
 
