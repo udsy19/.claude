@@ -4,7 +4,7 @@
 # The overseeing Claude session runs:  ssh <host> 'bash <ORG_ROOT>/lane-events.sh <ORG_ROOT>'  inside a Monitor.
 ORG_ROOT=${1:?ORG_ROOT}; CFG=$ORG_ROOT/org.json
 j() { python3 -c "import json,sys;d=json.load(open(sys.argv[2]));print(eval(sys.argv[1]))" "$1" "$CFG"; }
-U=$(j 'd.get("worker_user") or ""'); CL=$(j 'd.get("claude_bin","claude")'); PI=$(j 'd.get("auth_probe_interval_s",1800)')
+CL=$(j 'd.get("claude_bin","claude")'); PI=$(j 'd.get("auth_probe_interval_s",1800)')
 PM=$(j 'd["worker_models"][d.get("default_worker_model") or next(iter(d["worker_models"]))]')
 # What counts as an event (scripts/test-supervise.sh reads this line). Log lines start "YYYY-MM-DD HH:MM" or "HH:MM".
 EVENTS=" start on |finished|ASK_OWNER|MERGE|LAND|DONE|FAILED|exiting|DIVERGED|refused|usage limit|restarted|KILL|NO ACTIONABLE BLOCK|REPORT OVERDUE|UNFILLED|SUPERVISOR ERROR"
@@ -29,8 +29,7 @@ $(files)
 EOF
   mv "$S.tmp" "$S"; FIRST=0
   if [ $(( $(date +%s) - LASTPROBE )) -ge "$PI" ]; then LASTPROBE=$(date +%s)
-    pre=""; [ -n "$U" ] && pre="sudo -u $U -H"
-    out=$(cd /tmp && $pre timeout 300 "$CL" -p "reply with just OK" --model "$PM" 2>&1 | tail -3)
+    out=$(cd /tmp && timeout 300 "$CL" -p "reply with just OK" --model "$PM" 2>&1 | tail -3)   # as this user: one user runs the org
     # alert only on a REAL auth error — a slow reply on a busy box is not a failure
     if echo "$out" | grep -qiE "oauth|authenticat|expired|401|unauthorized|log ?in"; then echo "$(date -u '+%F %H:%M') WORKER AUTH FAILED: $(echo $out | cut -c1-120)"; fi
   fi

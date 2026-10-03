@@ -19,7 +19,7 @@ ROLLING: the supervisor is re-consulted whenever ANY agent finishes (no round ba
 ADOPTS agents still running (each agent runs under `timeout` in its own process group).
 Stop: touch <LANE_ROOT>/STOP.
 """
-import datetime, glob, json, os, re, shlex, subprocess, sys, time
+import datetime, glob, json, os, pwd, re, shlex, subprocess, sys, time
 
 LANE_ROOT = os.path.abspath(sys.argv[1]) if len(sys.argv) > 1 else os.getcwd()
 START_ROUND = int(sys.argv[2]) if len(sys.argv) > 2 else 1
@@ -39,7 +39,7 @@ AGENT_TIMEOUT = int(ORG.get("agent_timeout_s", 8 * 3600))
 REPORT_OVERDUE_S = int(ORG.get("report_overdue_s", 90 * 60))   # a running agent with no report file after this: warn once
 POLL_S = int(ORG.get("poll_interval_s", 30))
 IDLE_WAIT_S = int(ORG.get("idle_wait_s", 1200))              # nothing running: wait this long for owner answers / changes
-WORKER_USER = ORG.get("worker_user")                       # None/"" = run workers as the current user
+WORKER_USER = ORG.get("worker_user") or ""                 # remote runtime: the ONE user that runs the whole org
 SUP = ORG["supervisor"]                                     # {"backend": "codex"|"claude", "model": ..., ...}
 MODELS = ORG["worker_models"]                               # {"opus": "claude-opus-5-5", "sonnet": "sonnet"}
 DEFAULT_MODEL = ORG.get("default_worker_model", next(iter(MODELS)))
@@ -93,13 +93,6 @@ def rd(p, default=""):
 
 def stopped():
     return os.path.exists(f"{R}/STOP")
-
-
-def as_worker(cmd):
-    """Prefix a shell command so it runs as the worker user (if configured)."""
-    if not WORKER_USER or WORKER_USER == os.environ.get("USER"):
-        return cmd
-    return f"sudo -u {WORKER_USER} -H {cmd}"
 
 
 def env_str(extra):
@@ -210,7 +203,7 @@ def consult(prompt, out, cwd, images=()):
             cmd = (f"cd {q(cwd)} && {q(CLAUDE)} -p {q(full)} --model {q(SUP['model'])} "
                    f"--disallowedTools Edit,Write,NotebookEdit,Monitor --dangerously-skip-permissions")
             p = subprocess.run(["timeout", "5400", "bash", "-c",
-                                as_worker(f"env {env_str({'ORG_ROLE': 'supervisor'})} bash -c {q(cmd)}")],
+                                f"env {env_str({'ORG_ROLE': 'supervisor'})} bash -c {q(cmd)}"],
                                text=True, capture_output=True)
         text = p.stdout
         open(out, "w").write(text)
@@ -230,7 +223,7 @@ def claude_cmd(model, prompt_file, cwd, env_extra, cont=False):
     c = "--continue " if cont else ""
     inner = (f"cd {q(cwd)} && env {env_str(env_extra)} {q(CLAUDE)} -p {c}\"$(cat {q(prompt_file)})\" "
              f"--dangerously-skip-permissions --model {q(MODELS[model])} --disallowedTools Monitor")
-    return as_worker(f"bash -c {q(inner)}")
+    return f"bash -c {q(inner)}"
 
 
 def worktree(name, base):
@@ -242,8 +235,6 @@ def worktree(name, base):
             return None
         for src in ORG.get("worktree_links", []):          # e.g. node_modules, .env files (copied, never committed)
             sh(f"ln -sfn {q(f'{REPO}/{src}')} {q(f'{wt}/{src}')} 2>/dev/null")
-        if WORKER_USER:
-            sh(f"chown -R {WORKER_USER}:{WORKER_USER} {q(wt)} {q(REPO + '/.git')} 2>/dev/null")
     return wt
 
 
@@ -268,9 +259,6 @@ def run_agent(name, model, base, brief, rnd):
     if ORG.get("per_agent_build_dir"):
         env[ORG["per_agent_build_dir"]] = f"{R}/target/{name}"
         os.makedirs(env[ORG["per_agent_build_dir"]], exist_ok=True)
-    for d in ("reports", "prompts", "logs", "target", f"renders/{name}"):
-        if WORKER_USER:
-            sh(f"chown -R {WORKER_USER}:{WORKER_USER} {q(f'{R}/{d}')}")
     agent_log = f"{R}/logs/{rnd:04d}-{name}.log"
     # adopt_running() parses this command line back: keep the "cd <wt> " and "[ -s <report> ]" shapes
     script = (f"cd {q(wt)} && {claude_cmd(model, pf, wt, env)} > {q(agent_log)} 2>&1; "
@@ -286,8 +274,8 @@ def finish(procs):
         wt = f"{R}/wt/{name}"
         cenv = " ".join(f"{k}={q(v)}" for k, v in COMMIT_ENV.items())
         msg = q(f"{PREFIX} {name}: uncommitted agent work (safety net)")
-        sh(as_worker("bash -c " + q(f"cd {q(wt)} && git add -A && env {cenv} git commit --no-verify -q -m {msg}")))
-        sh(as_worker("bash -c " + q(f"cd {q(wt)} && git push -q origin {q(f'HEAD:refs/heads/{PREFIX}/{name}')}")))
+        sh(f"cd {q(wt)} && git add -A && env {cenv} git commit --no-verify -q -m {msg}")
+        sh(f"cd {q(wt)} && git push -q origin {q(f'HEAD:refs/heads/{PREFIX}/{name}')}")
         log(f"agent {name} finished rc={p.returncode} report={'present' if os.path.exists(report) else 'MISSING'}")
         FINISHED.append(name)
         if name in ST["overdue"]:
@@ -416,6 +404,11 @@ def merge(cwd, br, msg, why):
 
 # ── main loop ────────────────────────────────────────────────────────────────────────────────────────
 def main():
+    # One user runs the whole org (remote: worker_user; local: the owner). No user switching: refuse instead.
+    me = pwd.getpwuid(os.getuid()).pw_name
+    if WORKER_USER and WORKER_USER != me:
+        log(f"REFUSED to start: this lane runs as worker_user {WORKER_USER!r}, not {me!r} — start it as that user")
+        sys.exit(2)
     for d in ("reports", "prompts", "logs", "rounds", "wt", "target", "renders/owner"):
         os.makedirs(f"{R}/{d}", exist_ok=True)
     # An empty or placeholder-filled brief would be sent to the supervisor as content: refuse instead.

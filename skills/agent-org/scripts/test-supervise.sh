@@ -199,6 +199,11 @@ bash "$KIT/scripts/lanes.sh" "$ORG2" new g "$G" 1 false >/dev/null 2>&1
 check "re-run refills an empty file, keeps a filled one" "[ -s $ORG2/lanes/g/context.md ] && has $ORG2/lanes/g/rulings.md MARK-KEEP"
 urc=0; (cd "$ORG2/lanes/g" && ORG_ROOT=$ORG2 timeout 30 python3 "$ORG2/supervise.py" "$ORG2/lanes/g" 1 >/dev/null 2>&1) || urc=$?
 check "supervise.py refuses an UNFILLED lane (rc $urc)" "[ $urc = 2 ] && grep -q 'UNFILLED context.md: .*{{VISION_PARAGRAPH}}' $ORG2/lanes/g/lane.log && ! grep -q 'CONSULT' $ORG2/lanes/g/lane.log"
+python3 -c "import json,sys; d=json.load(open(sys.argv[1])); d['worker_user']='agent-org-nobody'; json.dump(d,open(sys.argv[1],'w'))" "$ORG2/org.json"
+wrc=0; (cd "$ORG2/lanes/g" && ORG_ROOT=$ORG2 timeout 30 python3 "$ORG2/supervise.py" "$ORG2/lanes/g" 1 >/dev/null 2>&1) || wrc=$?
+check "B1: a loop not running as worker_user refuses (no sudo) (rc $wrc)" "[ $wrc = 2 ] && grep -q \"REFUSED to start: this lane runs as worker_user 'agent-org-nobody'\" $ORG2/lanes/g/lane.log && ! grep -q CONSULT $ORG2/lanes/g/lane.log"
+check "B1: no sudo/chown/as_worker left in the loop or the feed" "! grep -nE 'sudo|chown|as_worker' $KIT/scripts/supervise.py $KIT/scripts/lane-events.sh"
+python3 -c "import json,sys; d=json.load(open(sys.argv[1])); d['worker_user']=''; json.dump(d,open(sys.argv[1],'w'))" "$ORG2/org.json"
 printf '#!/usr/bin/env bash\necho "$*" >> %q\n[ "$1" = has-session ] && exit 1; exit 0\n' "$SB/tmux.args" > "$ORG2/fakebin/tmux"; chmod +x "$ORG2/fakebin/tmux"
 touch "$ORG2/lanes/g/STOP"
 PATH="$ORG2/fakebin:$PATH" bash "$KIT/scripts/lanes.sh" "$ORG2" start g >/dev/null 2>&1
