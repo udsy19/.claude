@@ -21,7 +21,7 @@ echo "== sandbox $SB"
 # ── real tools the scripts may use (linked one by one), and the fakes ──
 mkdir -p "$REAL" "$FAKES" "$SB/users"
 for t in bash sh env git python3 rsync mkdir cp chmod ln install cat grep sed awk head tail tr cut sort uniq xargs \
-         basename dirname date mktemp rm mv ls touch seq sleep du find wc ps pgrep kill cksum tee readlink pwd true false; do
+         basename dirname date mktemp rm mv ls touch seq sleep du find wc ps pgrep kill cksum tee readlink pwd true false cmp; do
   p=$(command -v "$t") && ln -s "$p" "$REAL/$t"
 done
 fake() { printf '#!/bin/bash\necho "%s $*" >> "$LOG"\n%s\n' "$1" "$2" > "$FAKES/$1"; chmod +x "$FAKES/$1"; }
@@ -148,6 +148,28 @@ check "no real cargo anywhere: exit 127 with a one-line reason" "[ $r = 127 ] &&
 check "heavy subcommand runs through a slot lock in ORG_ROOT/locks" "[ \"\$(BQ LANE_ROOT='$ORG/lanes/t' cargo build x)\" = 'REAL-realbin build x' ] && [ -f '$ORG/locks/cargo.1' ]"
 check "BUILD_QUEUE_LOCK_DIR overrides the lock dir" "BQ BUILD_QUEUE_LOCK_DIR='$SB/lk' cargo test >/dev/null && [ -f '$SB/lk/cargo.1' ]"
 check "nothing written under /srv" "! has '$LOG' /srv"
+
+echo "== B5 crontab: replace only the kit's own lines"
+mkorg; O=$(printf '%q' "$ORG")
+cat > "$SB/cron.tester" <<CRON
+0 3 * * * /usr/bin/backup.sh
+5 * * * * /opt/other-tool/state-snapshot.sh nightly
+7 * * * * /srv/other/lanes.sh /srv/other gc; /srv/other/state-snapshot.sh /srv/other # agent-org /srv/other
+7 * * * * $O-2/lanes.sh $O-2 gc # agent-org $ORG-2
+7 * * * * $O/lanes.sh $O gc >> $O/logs/gc.log 2>&1; $O/state-snapshot.sh $O >> $O/logs/state-snapshot.log 2>&1
+CRON
+boot FAKE_OS=Linux FAKE_UID=1000 FAKE_USER=tester
+check "bootstrap ok" "[ $(rc) = 0 ]"
+check "unrelated job kept" "has '$SB/cron.tester' '0 3 * * * /usr/bin/backup.sh'"
+check "someone else's state-snapshot line kept" "has '$SB/cron.tester' '/opt/other-tool/state-snapshot.sh nightly'"
+check "other orgs' tagged lines kept (incl. a path-prefix twin)" "has '$SB/cron.tester' '# agent-org /srv/other' && has '$SB/cron.tester' '# agent-org $ORG-2'"
+check "the untagged line an older kit wrote for THIS org is replaced" "! grep -v 'agent-org' '$SB/cron.tester' | grep -qF '$O/state-snapshot.sh'"
+check "exactly one line for this org, tagged" "[ \$(grep -c '# agent-org $ORG\$' '$SB/cron.tester') = 1 ] && [ \$(wc -l < '$SB/cron.tester') = 5 ]"
+cp "$SB/cron.tester" "$SB/cron.before"; boot FAKE_OS=Linux FAKE_UID=1000 FAKE_USER=tester
+check "re-run: crontab unchanged" "cmp -s '$SB/cron.before' '$SB/cron.tester'"
+mkorg "{'runtime':'remote','worker_user':'agent','bin_dir':'$SB/srvbin'}"; echo '0 4 * * * /home/agent/own-job.sh' > "$SB/cron.agent"
+boot FAKE_UID=0 FAKE_USER=root
+check "root phase keeps the worker's own jobs" "has '$SB/cron.agent' '/home/agent/own-job.sh' && has '$SB/cron.agent' '# agent-org $ORG'"
 
 echo "== $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

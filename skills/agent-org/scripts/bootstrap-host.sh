@@ -32,9 +32,17 @@ install_bin() {   # the build queue wrapper + one symlink per wrapped tool (org.
   for t in $tools; do [ -e "$BIN/$t" ] || ln -s "$BIN/build-queue" "$BIN/$t"; done
   echo "build queue in $BIN wraps: $tools"
 }
-tick() {          # hourly: disk GC (merged, finished worktrees + old renders), then the lane-state snapshot
-  O=$(printf '%q' "$ORG_ROOT")
-  echo "7 * * * * $O/lanes.sh $O gc >> $O/logs/gc.log 2>&1; $O/state-snapshot.sh $O >> $O/logs/state-snapshot.log 2>&1"
+O=$(printf '%q' "$ORG_ROOT")
+TICK="$O/lanes.sh $O gc >> $O/logs/gc.log 2>&1; $O/state-snapshot.sh $O >> $O/logs/state-snapshot.log 2>&1"
+TAG="# agent-org $ORG_ROOT"   # hourly: disk GC (merged, finished worktrees + old renders), then the lane-state snapshot
+cron_set() {      # crontab [-u user]: replace ONLY this org's kit lines (tagged, or the untagged one older kits wrote)
+  crontab "$@" -l 2>/dev/null | python3 -c 'import sys
+tag, legacy = sys.argv[1], sys.argv[2]
+for l in sys.stdin:
+    s = l.rstrip("\n")
+    if not (s.endswith(tag) or ("# agent-org" not in s and legacy in s)): print(s)
+print("7 * * * * " + sys.argv[3] + " " + tag)' "$TAG" "$O/state-snapshot.sh $O " "$TICK" | crontab "$@" -
+  crontab "$@" -l 2>/dev/null | grep -qF -- "$TAG" || { echo "the hourly cron line did not land — check crontab $* -l"; exit 4; }
 }
 
 if [ "$MYUID" = 0 ]; then   # ── remote, phase 1 (root): the user, its bin dir, its crontab. Then hand over. ──
@@ -44,7 +52,7 @@ if [ "$MYUID" = 0 ]; then   # ── remote, phase 1 (root): the user, its bin d
     echo "created worker user $U (claude refuses --dangerously-skip-permissions as root)"; fi
   mkdir -p "$ORG_ROOT" && chown "$U:$U" "$ORG_ROOT" "$CFG"    # the org root is the worker's; nothing recursive
   install_bin
-  ( crontab -u "$U" -l 2>/dev/null | grep -v state-snapshot || true; tick ) | crontab -u "$U" -
+  cron_set -u "$U"
   if [ -d "$REPO/.git" ]; then
     own=$(python3 -c 'import os,pwd,sys;print(pwd.getpwuid(os.stat(sys.argv[1]).st_uid).pw_name)' "$REPO/.git")
     [ "$own" = "$U" ] || echo "WARN: $REPO belongs to $own, not $U — clone it as $U (the org never re-owns a repository)"
@@ -76,10 +84,8 @@ for s in pre-edit-scan memory-discipline; do
 done
 # continuous services
 tmux has-session -t gitsync 2>/dev/null || tmux new-session -d -s gitsync "$(printf '%q ' "$ORG_ROOT/git-sync.sh" "$ORG_ROOT")"
-if [ "$MODE" = local ]; then
-  ( crontab -l 2>/dev/null | grep -v state-snapshot || true; tick ) | crontab -
-fi
-crontab -l 2>/dev/null | grep -q state-snapshot || { echo "the hourly cron line did not land — check crontab -l"; exit 4; }
+if [ "$MODE" = local ]; then cron_set
+else crontab -l 2>/dev/null | grep -qF -- "$TAG" || { echo "no hourly line for $ORG_ROOT in $ME's crontab — re-run phase 1 as root"; exit 4; }; fi
 # login checks (report, never perform)
 echo "worker claude: $(cd /tmp && timeout 120 "$CL" -p 'reply with just OK' --model "$PM" 2>&1 | tail -1)"
 [ "$SUPB" = codex ] && echo "codex: $(codex login status 2>&1 | head -1)"
