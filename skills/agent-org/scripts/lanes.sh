@@ -13,7 +13,7 @@ set -e
 ORG_ROOT=${1:?ORG_ROOT}; cmd=${2:?command}; shift 2
 CFG=$ORG_ROOT/org.json; KIT=$(cd "$(dirname "$0")" && pwd)
 j() { python3 -c "import json,sys;d=json.load(open(sys.argv[2]));print(eval(sys.argv[1]))" "$1" "$CFG"; }
-REPO=$(j 'd["repo"]'); MAIN=$(j 'd.get("main_branch","main")'); U=$(j 'd.get("worker_user") or ""')
+REPO=$(j 'd["repo"]'); MAIN=$(j 'd.get("main_branch","main")')
 all() { ls -d "$ORG_ROOT"/lanes/*/ 2>/dev/null | xargs -n1 basename; }
 next_round() { local n; n=$(grep -oE "CONSULT [0-9]+" "$ORG_ROOT/lanes/$1/lane.log" 2>/dev/null | grep -oE "[0-9]+" | sort -n | tail -1); echo $(( ${n:-0} + 1 )); }
 start_one() { local k=$1 D=$ORG_ROOT/lanes/$1
@@ -41,7 +41,6 @@ for t in ("context","supervisor-brief","agent-rules","owner-answers","rulings"):
 PY
     cd "$REPO"; git show-ref -q --verify "refs/heads/lane/$k/integration" || git branch "lane/$k/integration" "$MAIN"
     [ -e "$D/int/.git" ] || git worktree add -q "$D/int" "lane/$k/integration"
-    if [ -n "$U" ]; then chown -R "$U:$U" "$D" "$REPO/.git" || echo "WARN: could not chown $D to $U"; fi
     echo "lane $k created at $D — fill $D/context.md and the GOAL section of $D/supervisor-brief.md before starting";;
   start) for k in ${@:-$(all)}; do start_one "$k"; done;;
   restart) for k in ${@:-$(all)}; do D=$ORG_ROOT/lanes/$k
