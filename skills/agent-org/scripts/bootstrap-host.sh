@@ -35,14 +35,44 @@ install_bin() {   # the build queue wrapper + one symlink per wrapped tool (org.
 O=$(printf '%q' "$ORG_ROOT")
 TICK="$O/lanes.sh $O gc >> $O/logs/gc.log 2>&1; $O/state-snapshot.sh $O >> $O/logs/state-snapshot.log 2>&1"
 TAG="# agent-org $ORG_ROOT"   # hourly: disk GC (merged, finished worktrees + old renders), then the lane-state snapshot
-cron_set() {      # crontab [-u user]: replace ONLY this org's kit lines (tagged, or the untagged one older kits wrote)
-  crontab "$@" -l 2>/dev/null | python3 -c 'import sys
-tag, legacy = sys.argv[1], sys.argv[2]
-for l in sys.stdin:
-    s = l.rstrip("\n")
-    if not (s.endswith(tag) or ("# agent-org" not in s and legacy in s)): print(s)
-print("7 * * * * " + sys.argv[3] + " " + tag)' "$TAG" "$O/state-snapshot.sh $O " "$TICK" | crontab "$@" -
-  crontab "$@" -l 2>/dev/null | grep -qF -- "$TAG" || { echo "the hourly cron line did not land — check crontab $* -l"; exit 4; }
+LABEL=agent-org.$(printf %s "$ORG_ROOT" | cksum | cut -d' ' -f1)
+cron_edit() {     # cron_edit add|drop [-u user]: replace/remove ONLY this org's kit lines (tagged, or the untagged one
+  local mode=$1; shift  #                     older kits wrote for this ORG_ROOT); every other line is kept as is
+  local cur; cur=$(crontab "$@" -l 2>/dev/null) || cur=""   # "no crontab" is not an error here
+  local new; new=$(printf '%s\n' "$cur" | python3 -c 'import sys
+tag, legacy, mode, tick = sys.argv[1:]
+for l in sys.stdin.read().splitlines():
+    if not (l.endswith(tag) or ("# agent-org" not in l and legacy in l)): print(l)
+if mode == "add": print("7 * * * * " + tick + " " + tag)' "$TAG" "$O/state-snapshot.sh $O " "$mode" "$TICK")
+  [ "$new" = "$cur" ] && return 0
+  printf '%s\n' "$new" | crontab "$@" -
+  [ "$mode" = drop ] || crontab "$@" -l 2>/dev/null | grep -qF -- "$TAG" || { echo "the hourly cron line did not land — check crontab $* -l"; exit 4; }
+}
+schedule() {      # the hourly job, run by the org's own user
+  if [ "$OS" = Darwin ]; then   # launchd.plist(5): unlike cron, a job missed while asleep runs on wake (laptops)
+    local p=$HOME/Library/LaunchAgents/$LABEL.plist; mkdir -p "$(dirname "$p")"
+    python3 -c 'import plistlib,sys
+plistlib.dump({"Label": sys.argv[2], "ProgramArguments": ["/bin/bash", "-c", sys.argv[3]],
+  "EnvironmentVariables": {"PATH": sys.argv[4]}, "StartCalendarInterval": {"Minute": 7}}, open(sys.argv[1], "wb"))' \
+      "$p" "$LABEL" "$TICK" "$PATH"
+    launchctl bootout "gui/$MYUID/$LABEL" 2>/dev/null || true
+    launchctl bootstrap "gui/$MYUID" "$p" || { echo "launchctl bootstrap failed for $p"; exit 4; }
+    command -v crontab >/dev/null && cron_edit drop          # an older kit's cron line would run the job twice
+    echo "hourly job: launchd agent $LABEL"
+  elif command -v crontab >/dev/null; then cron_edit add; echo "hourly job: crontab"
+  elif command -v systemctl >/dev/null && systemctl --user show-environment >/dev/null 2>&1; then
+    local d=$HOME/.config/systemd/user; mkdir -p "$d"   # systemd.timer(5): Persistent= catches up missed runs
+    local x; x=$(printf '%s' "$TICK" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/\$/$$/g' -e 's/%/%%/g')
+    printf '[Unit]\nDescription=agent-org hourly gc + lane-state snapshot (%s)\n[Service]\nType=oneshot\nEnvironment="PATH=%s"\nExecStart=/bin/bash -c "%s"\n' \
+      "$(printf %s "$ORG_ROOT" | sed 's/%/%%/g')" "$PATH" "$x" > "$d/$LABEL.service"
+    printf '[Unit]\nDescription=agent-org hourly (%s)\n[Timer]\nOnCalendar=*-*-* *:07:00\nPersistent=true\n[Install]\nWantedBy=timers.target\n' \
+      "$(printf %s "$ORG_ROOT" | sed 's/%/%%/g')" > "$d/$LABEL.timer"
+    systemctl --user daemon-reload && systemctl --user enable --now "$LABEL.timer" || { echo "systemctl --user enable failed"; exit 4; }
+    echo "hourly job: systemd --user timer $LABEL"
+  else
+    tmux has-session -t "$LABEL" 2>/dev/null || tmux new-session -d -s "$LABEL" "while :; do bash -c $(printf %q "$TICK"); sleep 3600; done"
+    echo "hourly job: tmux loop $LABEL (WARN: no crontab, launchd or systemd --user; it stops at reboot — re-run this script)"
+  fi
 }
 
 if [ "$MYUID" = 0 ]; then   # ── remote, phase 1 (root): the user, its bin dir, its crontab. Then hand over. ──
@@ -52,7 +82,9 @@ if [ "$MYUID" = 0 ]; then   # ── remote, phase 1 (root): the user, its bin d
     echo "created worker user $U (claude refuses --dangerously-skip-permissions as root)"; fi
   mkdir -p "$ORG_ROOT" && chown "$U:$U" "$ORG_ROOT" "$CFG"    # the org root is the worker's; nothing recursive
   install_bin
-  cron_set -u "$U"
+  if command -v crontab >/dev/null; then cron_edit add -u "$U"
+  else echo "no crontab: phase 2 will install a systemd --user timer (or a tmux loop)"
+    command -v loginctl >/dev/null && loginctl enable-linger "$U"; fi   # user timers run without a login session
   if [ -d "$REPO/.git" ]; then
     own=$(python3 -c 'import os,pwd,sys;print(pwd.getpwuid(os.stat(sys.argv[1]).st_uid).pw_name)' "$REPO/.git")
     [ "$own" = "$U" ] || echo "WARN: $REPO belongs to $own, not $U — clone it as $U (the org never re-owns a repository)"
@@ -84,8 +116,9 @@ for s in pre-edit-scan memory-discipline; do
 done
 # continuous services
 tmux has-session -t gitsync 2>/dev/null || tmux new-session -d -s gitsync "$(printf '%q ' "$ORG_ROOT/git-sync.sh" "$ORG_ROOT")"
-if [ "$MODE" = local ]; then cron_set
-else crontab -l 2>/dev/null | grep -qF -- "$TAG" || { echo "no hourly line for $ORG_ROOT in $ME's crontab — re-run phase 1 as root"; exit 4; }; fi
+if [ "$MODE" = remote ] && command -v crontab >/dev/null; then   # phase 1 (root) wrote it
+  crontab -l 2>/dev/null | grep -qF -- "$TAG" || { echo "no hourly line for $ORG_ROOT in $ME's crontab — re-run phase 1 as root"; exit 4; }
+else schedule; fi
 # login checks (report, never perform)
 echo "worker claude: $(cd /tmp && timeout 120 "$CL" -p 'reply with just OK' --model "$PM" 2>&1 | tail -1)"
 [ "$SUPB" = codex ] && echo "codex: $(codex login status 2>&1 | head -1)"

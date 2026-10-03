@@ -39,6 +39,7 @@ fake timeout   'shift; exec "$@"'
 fake flock     'exit 0'
 fake claude    'case "$*" in *"reply with just OK"*) echo OK;; esac'
 fake codex     'echo "Logged in (fake)"'
+fake loginctl  'exit 0'
 # PATH = the fakes (minus any named) + the real-tool links. Nothing else.
 path_without() { local d=$SB/path-$(echo "x $*" | cksum | cut -d' ' -f1); mkdir -p "$d"
   for f in "$FAKES"/*; do case " $* " in *" $(basename "$f") "*) ;; *) ln -sf "$f" "$d/";; esac; done; echo "$d:$REAL"; }
@@ -170,6 +171,43 @@ check "re-run: crontab unchanged" "cmp -s '$SB/cron.before' '$SB/cron.tester'"
 mkorg "{'runtime':'remote','worker_user':'agent','bin_dir':'$SB/srvbin'}"; echo '0 4 * * * /home/agent/own-job.sh' > "$SB/cron.agent"
 boot FAKE_UID=0 FAKE_USER=root
 check "root phase keeps the worker's own jobs" "has '$SB/cron.agent' '/home/agent/own-job.sh' && has '$SB/cron.agent' '# agent-org $ORG'"
+
+echo "== B7 local timers: launchd on macOS, else crontab, else systemd --user, else a tmux loop"
+ORG="$SB/my org"; mkorg; LBL=agent-org.$(printf %s "$ORG" | cksum | cut -d' ' -f1); PL="$HOME/Library/LaunchAgents/$LBL.plist"
+O=$(printf '%q' "$ORG"); printf '0 3 * * * /usr/bin/backup.sh\n7 * * * * %s/lanes.sh %s gc; %s/state-snapshot.sh %s >> x\n' "$O" "$O" "$O" "$O" > "$SB/cron.tester"
+boot FAKE_OS=Darwin FAKE_UID=501 FAKE_USER=tester
+check "macOS: bootstrap ok (org root with a space)" "[ $(rc) = 0 ] && has '$SB/boot.out' 'hourly job: launchd agent $LBL'"
+check "macOS: launch agent plist written, hourly at :07, bash -c the job" "python3 -c 'import plistlib,sys;d=plistlib.load(open(sys.argv[1],\"rb\"));assert d[\"Label\"]==sys.argv[2] and d[\"StartCalendarInterval\"]=={\"Minute\":7} and d[\"ProgramArguments\"][:2]==[\"/bin/bash\",\"-c\"] and \"state-snapshot.sh\" in d[\"ProgramArguments\"][2]' '$PL' '$LBL'"
+check "macOS: loaded with launchctl bootstrap gui/<uid>" "has '$LOG' 'launchctl bootstrap gui/501 $PL'"
+check "macOS: the older kit's cron line for this org removed, other jobs kept" "has '$SB/cron.tester' '/usr/bin/backup.sh' && ! has '$SB/cron.tester' '$O/state-snapshot.sh'"
+JOB=$(python3 -c 'import plistlib,sys;print(plistlib.load(open(sys.argv[1],"rb"))["ProgramArguments"][2])' "$PL")
+/bin/bash -c "$JOB"
+check "running the launchd job: gc ran and the snapshot reached origin" "[ -f '$ORG/logs/gc.log' ] && git -C '$SB/origin.git' show-ref -q --verify refs/heads/backup/lane-state"
+cp "$PL" "$SB/pl.before"; boot FAKE_OS=Darwin FAKE_UID=501 FAKE_USER=tester
+check "macOS re-run: bootout + bootstrap, same plist" "has '$LOG' 'launchctl bootout gui/501/$LBL' && cmp -s '$SB/pl.before' '$PL'"
+mkorg; PATH=$(path_without crontab) boot FAKE_OS=Linux FAKE_UID=1000
+U_="$HOME/.config/systemd/user/$LBL"
+check "Linux, no crontab: systemd --user timer written and enabled" "[ $(rc) = 0 ] && has '$U_.timer' 'OnCalendar=*-*-* *:07:00' && has '$U_.timer' 'Persistent=true' && has '$LOG' 'systemctl --user enable --now $LBL.timer'"
+cat > "$SB/unquote.py" <<'PY2'
+import os, sys   # systemd.syntax(7) double-quote unescaping, then $$ -> $ and %% -> % (systemd.service(5), systemd.unit(5))
+l = [x for x in open(sys.argv[1]).read().splitlines() if x.startswith('ExecStart=/bin/bash -c "')][0]
+v = l[len('ExecStart=/bin/bash -c "'):-1]; out = ""; i = 0
+while i < len(v):
+    c = v[i]
+    if c == "\\": out += v[i + 1]; i += 2; continue
+    if c in "$%" and v[i + 1:i + 2] == c: out += c; i += 2; continue
+    out += c; i += 1
+sys.exit(0 if out == os.environ["JOB"] else print(repr(out), repr(os.environ["JOB"])) or 1)
+PY2
+export JOB
+check "systemd ExecStart unquotes back to the same job" "python3 '$SB/unquote.py' '$U_.service'"
+mkorg; PATH=$(path_without crontab) boot FAKE_OS=Linux FAKE_UID=1000 FAKE_SYSTEMD_RC=1
+check "Linux, no crontab, no systemd --user: tmux loop, with a warning" "[ $(rc) = 0 ] && has '$LOG' 'tmux new-session -d -s $LBL' && has '$SB/boot.out' 'stops at reboot'"
+mkorg "{'runtime':'remote','worker_user':'agent','bin_dir':'$SB/srvbin'}"; PATH=$(path_without crontab) boot FAKE_UID=0 FAKE_USER=root
+check "remote root phase, no crontab: lingering enabled for the worker, timer left to phase 2" "[ $(rc) = 0 ] && has '$LOG' 'loginctl enable-linger agent' && has '$SB/boot.out' 'phase 2 will install a systemd --user timer'"
+PATH=$(path_without crontab) boot FAKE_UID=1001 FAKE_USER=agent
+check "remote phase 2, no crontab: the worker's own systemd --user timer" "[ $(rc) = 0 ] && [ -f '$U_.timer' ]"
+ORG=$SB/org
 
 echo "== $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]
