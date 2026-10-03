@@ -46,7 +46,7 @@ export PATH; PATH=$(path_without)
 
 # ── a project repo with a bare origin ──
 export HOME=$SB/home; mkdir -p "$HOME"
-git init -q --bare "$SB/origin.git"
+git init -q --bare -b main "$SB/origin.git"
 git init -q -b main "$SB/repo" && cd "$SB/repo" || exit 2
 mkdir -p vault && printf '# Agents\n' > vault/AGENTS.md && git add -A && git commit -qm init
 git remote add origin "$SB/origin.git" && git push -q origin main
@@ -108,6 +108,25 @@ check "remote as another non-root user: refused" "[ $(rc) = 2 ] && has '$SB/boot
 
 mkorg "{'supervisor':{'backend':'codex','model':'x'}}"; PATH=$(path_without codex) boot
 check "codex supervisor without codex: stops at need, names the install" "[ $(rc) = 3 ] && has '$SB/boot.out' 'MISSING: codex — npm i -g @openai/codex'"
+
+echo "== B2 git-sync: fast-forwards the main BRANCH, not whatever HEAD is"
+git clone -q "$SB/origin.git" "$SB/other" && (cd "$SB/other" && echo up1 > up1.txt && git add -A && git commit -qm up1 && git push -q origin main)
+mkorg; cd "$SB/repo" && git checkout -q -b parked && echo parked > parked.txt && git add -A && git commit -qm parked
+bash "$SC/git-sync.sh" "$ORG" --once
+check "parked on another branch: local main fast-forwarded to origin/main" "[ \$(git -C '$SB/repo' rev-parse main) = \$(git -C '$SB/origin.git' rev-parse main) ]"
+check "parked: HEAD and its branch untouched" "[ \$(git -C '$SB/repo' symbolic-ref --short HEAD) = parked ] && [ -f '$SB/repo/parked.txt' ] && [ ! -f '$SB/repo/up1.txt' ] && ! git -C '$SB/repo' merge-base --is-ancestor \$(git -C '$SB/repo' rev-parse main) parked"
+check "parked: logged" "has '$ORG/logs/git-sync.log' 'main fast-forwarded'"
+(cd "$SB/other" && echo up2 > up2.txt && git add -A && git commit -qm up2 && git push -q origin main)
+git -C "$SB/repo" checkout -q main; bash "$SC/git-sync.sh" "$ORG" --once
+check "on main: ff-merged into the checkout" "[ -f '$SB/repo/up2.txt' ] && [ \$(git -C '$SB/repo' rev-parse HEAD) = \$(git -C '$SB/origin.git' rev-parse main) ]"
+(cd "$SB/repo" && echo mine > mine.txt && git add -A && git commit -qm mine)
+bash "$SC/git-sync.sh" "$ORG" --once
+check "main ahead, push_main unset: NOT pushed (default false)" "[ \$(git -C '$SB/origin.git' rev-parse main) != \$(git -C '$SB/repo' rev-parse main) ]"
+mkorg "{'sync':{'push_main':True,'branch_globs':['lane/*']}}"; mkdir -p "$SB/repo/lane"; touch "$SB/repo/lane/x"
+git -C "$SB/repo" branch -q lane/t/integration
+bash "$SC/git-sync.sh" "$ORG" --once; rm -rf "$SB/repo/lane"
+check "push_main true: pushed" "[ \$(git -C '$SB/origin.git' rev-parse main) = \$(git -C '$SB/repo' rev-parse main) ]"
+check "lane/* pushed as a refspec even with a lane/ dir in the checkout" "git -C '$SB/origin.git' show-ref -q --verify refs/heads/lane/t/integration"
 
 echo "== $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]
