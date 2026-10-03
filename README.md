@@ -4,12 +4,12 @@
 
 **A complete, batteries-included `.claude` folder that doesn't just _contain_ skills — it _uses_ them.**
 
-41 skills · 4 agent personas · 8 slash commands · reflexive skill routing · always-on engineering disciplines · a one-prompt supervised agent organisation
+41 skills · 4 agent personas · 9 slash commands · reflexive skill routing · always-on engineering disciplines · a one-prompt supervised agent organisation
 
 <p>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
   <img src="https://img.shields.io/badge/skills-41-22c55e" alt="41 skills">
-  <img src="https://img.shields.io/badge/hooks-5-8b5cf6" alt="5 hooks">
+  <img src="https://img.shields.io/badge/hooks-6-8b5cf6" alt="6 hooks">
   <img src="https://img.shields.io/badge/Claude%20Code-ready-d97706" alt="Claude Code ready">
   <a href="https://github.com/udsy19/.claude/stargazers"><img src="https://img.shields.io/github/stars/udsy19/.claude?color=eab308" alt="Stars"></a>
 </p>
@@ -26,7 +26,7 @@
 - **Always-on disciplines** — verify-don't-hallucinate, no-bloat, continuous-git, memory, and ship-fast run in the background.
 - **40 skills across the full lifecycle** — define → plan → build → verify → review → ship.
 - **A supervised agent organisation from one prompt** — `/agent-org` sets up lane supervisors, Claude workers and their sub-agents, an Obsidian vault as mission control, 3-layer memory, session handoffs and crash recovery.
-- **5 fail-safe hooks** — degrade gracefully with missing deps, never block your prompt.
+- **6 fail-safe hooks** — degrade gracefully with missing deps and never block your prompt (the vault gate refuses one edit per session, on purpose).
 - **Best-in-class bundled skills** — design, React/Next, and accessibility from Anthropic, Vercel, AccessLint & more.
 - **Token-conscious** — progressive disclosure plus a trimmed session injection keep context lean.
 
@@ -115,7 +115,7 @@ Everything degrades gracefully if a dependency is missing, but for full function
 
 | Dependency | Used by |
 |---|---|
-| `jq` | all hooks (router, session-start, caches) — they silently no-op without it |
+| `jq` | all hooks (router, session-start, caches, vault gate) — they silently no-op without it |
 | `curl`, `shasum`/`sha256sum` | the `sdd-cache` web-fetch cache hooks |
 | `python3` | the `ui-ux-pro-max` skill's design-system CLI |
 | Google Chrome + the AccessLint MCP server | the `accesslint-*` live-DOM accessibility skills |
@@ -218,7 +218,7 @@ Everything degrades gracefully if a dependency is missing, but for full function
 **Also included:**
 
 - **`agents/`** — 4 reusable personas: `code-reviewer`, `security-auditor`, `test-engineer`, `web-performance-auditor`.
-- **`commands/`** — 8 slash commands: `/build`, `/plan`, `/spec`, `/test`, `/review`, `/ship`, `/code-simplify`, `/webperf`.
+- **`commands/`** — 9 slash commands: `/setup`, `/build`, `/plan`, `/spec`, `/test`, `/review`, `/ship`, `/code-simplify`, `/webperf`.
 - **`rules/no-bloat.md`** — always-on policy: search before write, leave no dead code.
 - **`references/`** — checklists for testing, performance, security, accessibility, observability, orchestration, plus a `.claude`-folder authoring guide.
 
@@ -241,17 +241,17 @@ SUB-AGENT    the worker's helpers: research, review, parallel exploration
 Goals go down, evidence comes up. Around the chain the kit installs:
 
 - **an Obsidian vault as mission control**: Vision, Plan, Roadmap, Missions, Decisions and Sessions, with generated hubs and an Index;
-- **three memory layers**: auto-memory for the owner's rulings, the vault for project knowledge, and per-lane memory for each supervisor;
-- **six rules** plus the hooks, role cards (`builder`, `reviewer`, `researcher`, `bug-fixer`, …) and gates that enforce them (`scripts/gates/org-board.sh`);
-- **ops**: git sync, an hourly state snapshot, an event feed with login probes, and safe lane restarts that keep workers alive.
+- **three memory layers**: auto-memory for corrections and preferences, the vault and `.claude/rules/owner-rulings.md` for project knowledge and the owner's standing rulings, and per-lane memory for each supervisor;
+- **seven rules** plus the hooks, role cards (`builder`, `reviewer`, `researcher`, `bug-fixer`, …) and gates that enforce them (`scripts/gates/org-board.sh`, and a PR-gate workflow);
+- **ops**: git sync, an hourly state snapshot, an event feed with login probes, landings that run the gates first, daily spend caps per lane, and safe lane restarts that keep workers alive.
 
 **Use it** — in Claude Code, in any repo:
 
 ```
-/agent-org set up the agent organisation for this project
+/setup                          (pick the full org)  — or —  /agent-org set up the agent organisation for this project
 ```
 
-Claude interviews you about the project, runtime (local tmux or a VPS), models and lanes, shows a summary for your yes, then installs and starts everything. The only steps left to you are the `claude`/`codex` logins, typed in your own terminal. Day-to-day commands are in [`skills/agent-org/README.md`](skills/agent-org/README.md), and the full design (every guard and the failure it exists for) is in [`skills/agent-org/docs/HIERARCHY.md`](skills/agent-org/docs/HIERARCHY.md).
+Claude interviews you about the project, runtime (locally as you, or on a Linux VPS as a worker user), models and lanes, shows a summary for your yes, then installs and starts everything. The only steps left to you are the `claude`/`codex` logins, typed in your own terminal. Day-to-day commands are in [`skills/agent-org/README.md`](skills/agent-org/README.md), and the full design (every guard and the failure it exists for) is in [`skills/agent-org/docs/HIERARCHY.md`](skills/agent-org/docs/HIERARCHY.md).
 
 It reuses this config rather than duplicating it: the `pre-edit-scan` and `memory-discipline` skills its rules depend on are the ones in `skills/`, and `references/orchestration-patterns.md` lists it as Pattern 6 (supervised lanes). It is also the most expensive pattern here, a supervisor consult per cycle plus up to N workers per lane, so use it for ongoing efforts, not single features.
 
@@ -265,6 +265,7 @@ All wired in `settings.json` and written to **fail safe** (no dependency → sil
 | `skill-router.sh` | `UserPromptSubmit` | Matches the prompt to skills and injects a routing hint (silent on weak/no match; skips slash commands) |
 | `sdd-cache-pre.sh` / `sdd-cache-post.sh` | `PreToolUse` / `PostToolUse` (WebFetch) | HTTP-validator cache for `WebFetch` — serves unchanged pages from cache on a 304 |
 | `simplify-ignore.sh` | `PreToolUse` (Read) / `PostToolUse` (Edit\|Write) / `Stop` | Hides `simplify-ignore`-marked blocks from the model during edits, restores them after |
+| `vault-gate.sh` | `PreToolUse` (Edit\|Write\|MultiEdit\|NotebookEdit) | In a git repo without an agent-org vault, refuses the first edit of a session once with "run `/setup` here"; silent outside git, with a vault, in headless org processes, and with `.claude/no-vault` or `ORG_VAULT=off` |
 
 ## Configuration & customization
 
@@ -281,8 +282,12 @@ Agent Skills can execute code (scripts, and `!`-prefixed shell blocks run on loa
 - **Review before you trust.** Everything here is plain markdown and shell — readable end to end.
 - The bundled third-party skills were scanned for obvious exfiltration / shell-escape / credential-read patterns and ran clean at bundling time, but you should verify for your own threat model.
 - `ui-ux-pro-max` ships a local Python CLI (queries bundled CSVs — no network); the `accesslint-*` skills drive a local Chrome via an MCP server. Review both if that matters to you.
-- The hooks only ever read tool inputs and write to local cache dirs; none phone home.
-- `agent-org` runs agents with permissions skipped, inside their own worktrees, and pushes lane branches (main only if you let a lane land). On a shared host, run it as a separate worker user (its bootstrap creates one). It never handles secrets: you type logins into your own terminal.
+- The hooks only ever read tool inputs and write to local cache and state dirs; none phone home.
+- `agent-org` runs agents with permissions skipped, inside their own worktrees. Safety comes from roles and gates instead: a Claude supervisor gets only read and web-research tools, supervisor output is validated before it touches git, a landing runs the gates first, and each lane has daily spend caps. It pushes lane branches, and main only if you set `sync.push_main`. Its hourly lane-state snapshot is pushed to `origin` too, so anyone who can read the repo can read it (secret-shaped `org.json` keys are stripped). On a VPS it runs as a separate worker user (its bootstrap creates one). It never handles secrets: you type logins into your own terminal.
+
+## CI
+
+`.github/workflows/ci.yml` runs on every push and PR. A lint job (Ubuntu) runs shellcheck over the hooks and the agent-org scripts, checks that every JSON config parses, that every `skills/*/SKILL.md` has YAML frontmatter with `name` and `description`, that no Python bytecode is tracked, and that the README's skill count matches `skills/`. A test job on Ubuntu and macOS runs every `*.test.mjs` under `node --test`, the loop-guard cases, and the agent-org suites: the lane loop, the host scripts, the init-repo e2e with `org-board.sh`, the headless audit and the `/setup` permutation matrix. All of them use fakes; none needs a login or the network.
 
 ## Acknowledgements & credits
 
