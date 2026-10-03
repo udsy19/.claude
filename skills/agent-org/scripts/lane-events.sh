@@ -35,7 +35,7 @@ EOF
   if [ $(( $(date +%s) - LASTPROBE )) -ge "$PI" ]; then LASTPROBE=$(date +%s)
     out=$(cd /tmp && to 300 "$CL" -p "reply with just OK" --model "$PM" 2>&1 | tail -3)   # as this user: one user runs the org
     # alert only on a REAL auth error — a slow reply on a busy box is not a failure
-    if echo "$out" | grep -qiE "oauth|authenticat|expired|401|unauthorized|log ?in"; then echo "$(date -u '+%F %H:%M') WORKER AUTH FAILED: $(echo $out | cut -c1-120)"; fi
+    if echo "$out" | grep -qiE "oauth|authenticat|expired|401|unauthorized|log ?in"; then echo "$(date -u '+%F %H:%M') WORKER AUTH FAILED: $(printf '%s' "$out" | tr '\n' ' ' | cut -c1-120)"; fi
   fi
   sleep 60
 done

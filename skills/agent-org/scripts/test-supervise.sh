@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2034,SC2016  # outputs are read by the eval'd check strings; fakes are written with literal $vars
 # Offline end-to-end test of the lane loop (supervise.py) and its tooling (lanes.sh gc, lane-metrics.py,
 # lane-events.sh's event pattern). No network, no real claude or codex: a throw-away org in /tmp, a canned
 # supervisor (org.json "backend": "script", TEST-ONLY) and a fake worker binary (org.json "claude_bin").
@@ -16,7 +17,7 @@ ORG=$SB/org; REPO=$SB/repo; L=$ORG/lanes/t
 PASS=0; FAIL=0
 cleanup() {
   pkill -f "sleep 611" 2>/dev/null; pkill -f "cd $L/wt/beta && sleep" 2>/dev/null
-  [ "${KEEP:-}" = 1 ] && echo "sandbox kept: $SB" || rm -rf "$SB"
+  if [ "${KEEP:-}" = 1 ]; then echo "sandbox kept: $SB"; else rm -rf "$SB"; fi
 }
 trap cleanup EXIT
 check() { if eval "$2"; then PASS=$((PASS+1)); echo "  ok   $1"; else FAIL=$((FAIL+1)); echo "  FAIL $1"; fi; }
@@ -196,7 +197,9 @@ printf old > "$L/renders/beta/old.png"; touch -t 202601010000 "$L/renders/beta/o
 printf old > "$L/renders/owner/old-owner.png"; touch -t 202601010000 "$L/renders/owner/old-owner.png"
 bash -c "cd $L/wt/beta && sleep 30" & DUMMY=$!     # beta looks "running" (same command shape as a live agent)
 sleep 0.5
-gcout=$(bash "$KIT/scripts/lanes.sh" "$ORG" gc t 2>&1); echo "$gcout" | sed 's/^/    /'
+gcout=$(bash "$KIT/scripts/lanes.sh" "$ORG" gc t 2>&1)
+# shellcheck disable=SC2001  # indents every line of the output
+echo "$gcout" | sed 's/^/    /'
 kill $DUMMY 2>/dev/null; wait $DUMMY 2>/dev/null; pkill -f "cd $L/wt/beta && sleep" 2>/dev/null
 check "merged, finished worktrees removed (+ build dir)" "[ ! -d $L/wt/alpha ] && [ ! -d $L/wt/slowpoke ] && [ ! -d $L/target/alpha ]"
 check "running agent's worktree kept" "[ -d $L/wt/beta ] && echo \"\$gcout\" | grep -q 'keep wt/beta'"
@@ -295,7 +298,7 @@ newlane() {   # newlane <org dir> <lane> <agent_timeout_s> <canned outputs...>: 
   local o=$1 ln=$2 t=$3; shift 3; mkdir -p "$o"; cp "$ORG/supervise.py" "$o/"
   { echo '#!/usr/bin/env bash'; echo "n=\$(( \$(cat '$o/count' 2>/dev/null || echo 0) + 1 )); echo \$n > '$o/count'; cat > '$o/seen-'\$n.txt"
     echo 'case $n in'; i=1; for c in "$@"; do printf "  %s) printf '%%b' %q;;\n" $i "$c"; i=$((i+1)); done
-    echo "  *) printf '=== DONE ===\\n';;"; echo 'esac'; } > "$o/sup.sh"; chmod +x "$o/sup.sh"
+    printf '%s\n' "  *) printf '=== DONE ===\\n';;"; echo 'esac'; } > "$o/sup.sh"; chmod +x "$o/sup.sh"
   python3 -c "import json,sys; d=json.load(open(sys.argv[1])); d['supervisor']['command']=sys.argv[2]; d['agent_timeout_s']=int(sys.argv[3]); json.dump(d,open(sys.argv[4],'w'))" \
     "$ORG/org.json" "$o/sup.sh" "$t" "$o/org.json"
   bash "$KIT/scripts/lanes.sh" "$o" new "$ln" "goal" 2 false >/dev/null 2>&1; fill "$o/lanes/$ln/context.md" "$o/lanes/$ln/supervisor-brief.md"
@@ -358,7 +361,7 @@ O11=$SB/org11; L11=$O11/lanes/bud
 newlane "$O11" bud 120 '=== PLAN ===\none\n=== END PLAN ===\n' '=== PLAN ===\ntwo\n=== END PLAN ===\n' '=== PLAN ===\nthree\n=== END PLAN ===\n'
 setorg "$O11/org.json" '{"max_consults_per_day": 2}'
 ( cd "$L11" && ORG_ROOT=$O11 exec python3 "$O11/supervise.py" "$L11" 1 > "$SB/bud.out" 2>&1 ) & BP=$!
-for _ in $(seq 1 150); do has $L11/lane.log 'BUDGET cap reached' && break; sleep 0.2; done
+for _ in $(seq 1 150); do has "$L11/lane.log" 'BUDGET cap reached' && break; sleep 0.2; done
 sleep 2; touch "$L11/STOP"; for _ in $(seq 1 50); do kill -0 $BP 2>/dev/null || break; sleep 0.2; done; kill $BP 2>/dev/null; wait $BP 2>/dev/null
 check "D1: consult cap 2 — two consults, then idle" "[ \$(grep -c '=== CONSULT' $L11/lane.log) = 2 ] && has $L11/lane.log 'BUDGET cap reached (consults 2/2)' && has $L11/lane.log 'supervisor loop exiting'"
 check "D1: the breach is asked of the owner, once" "[ \$(grep -c '^## Budget' $L11/owner-questions.md) = 1 ] && has $L11/owner-questions.md 'max_consults_per_day'"
