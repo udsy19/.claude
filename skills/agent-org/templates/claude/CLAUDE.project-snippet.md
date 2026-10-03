@@ -8,7 +8,7 @@
   workers may use sub-agents. See `vault/Design/lanes-and-supervisors.md`. Org root `{{ORG_ROOT}}` on
   {{HOST}}.
 - **Rules** (`.claude/rules/`, auto-loaded; gate-independence only when touching gates, hooks or tests):
-  gate-independence · no-bloat · goals-not-tests · vault-first · evidence-and-honesty · protected-paths.
+  owner-rulings · gate-independence · no-bloat · goals-not-tests · vault-first · evidence-and-honesty · protected-paths.
 - **Protected (supervisor/owner only, enforced by hook + landing gate):** `vault/Plan.md`,
   `vault/Roadmap.md`, `vault/Decisions/`, `.claude/rules/`. Everyone else: `node scripts/propose.mjs`.
 - **Before writing a new symbol:** the search order in `.claude/rules/no-bloat.md`. Delete what you

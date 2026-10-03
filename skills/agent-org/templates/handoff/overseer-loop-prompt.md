@@ -5,10 +5,11 @@ Each tick:
    dispatches, finishes (rc, report present?), MERGE/LAND, ASK_OWNER, usage limits and WORKER AUTH FAILED.
 2. **Check each finished worker.** Read its report, check the evidence (screenshots, commits), and confirm
    the report opens with a Vault check.
-3. **New ASK_OWNER:** answer it from the standing rulings if they cover it. Otherwise tell the owner in one
+3. **New ASK_OWNER:** answer it from the standing rulings (`.claude/rules/owner-rulings.md`, then the lane's
+   `rulings.md`) if they cover it. Otherwise tell the owner in one
    or two plain sentences, with images, and append the answer to the lane's `owner-answers.md` when it
-   comes (its own `## <date> · <question>` section). Then update the lane's `rulings.md`: add the ruling,
-   and replace any ruling it supersedes. Consults show `rulings.md` in full but only the newest 10 raw
+   comes (its own `## <date> · <question>` section). Then record the ruling: a project-wide one in `.claude/rules/owner-rulings.md` (`Authority: owner`), a
+   lane-only one in the lane's `rulings.md`; replace any ruling it supersedes. Consults show `rulings.md` in full but only the newest 10 raw
    answers, so a ruling missing from `rulings.md` is eventually forgotten.
 4. **Health:** load and CPU steal, orphan processes (parent PID 1, finished owner), workers timing out with
    no report (`REPORT OVERDUE`), `NO ACTIONABLE BLOCK` twice in a row (the supervisor's output format or

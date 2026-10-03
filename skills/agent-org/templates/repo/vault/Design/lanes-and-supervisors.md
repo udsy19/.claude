@@ -27,12 +27,8 @@ Runtime: **{{RUNTIME}}** ({{HOST}}). Org root: `{{ORG_ROOT}}`.
 
 ## Rulings every lane carries
 
-These live in each lane's `rulings.md` (the raw answers in `owner-answers.md`), plus the overseer's memory.
-- **Goals, not tests:** briefs give goal, vision, what we are building and what has not worked.
-- **Vault first:** reports open with a "Vault check" and write findings back.
-- **Judged by the real product:** evidence is screenshots and videos, not counts.
-- **Settings, not owner questions:** what the product can expose as a user setting is a setting, not a
-  question for the owner.
+The standing ones live in the repo's `.claude/rules/owner-rulings.md` (versioned, owner-only); a lane's own
+rulings live in its `rulings.md` (the raw answers in `owner-answers.md`). Auto-memory only points at them.
 
 ## Communication — the only channels
 

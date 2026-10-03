@@ -67,7 +67,7 @@ verbatim · **—** may not write. "Worker" and "sub-agent" are both `ORG_ROLE` 
 | work branches `lane/<lane>/<slug>` | — | — | MERGE into `lane/<lane>/integration` | W (its own) | — | `git-sync.sh` (never force) |
 | `.claude/settings.json` | W | W | — | P | P | `agent-contract.mjs` + `plan-ownership.mjs` (protected path) |
 | hook scripts, role cards | W | W | — | — | — | review (no hook guards these) |
-| Claude auto-memory | — | W (owner rulings, corrections) | — | — (no `memory:` frontmatter) | — | protocol |
+| Claude auto-memory | — | W (a pointer to `.claude/rules/owner-rulings.md`, corrections, cross-project preferences) | — | — (no `memory:` frontmatter) | — | protocol |
 
 **What each may NOT write**, in one line each: the owner — nothing is closed to the owner. The
 overseer — an owner verdict or acceptance, and a rule or decision the owner did not give. A lane

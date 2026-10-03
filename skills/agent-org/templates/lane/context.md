@@ -10,14 +10,10 @@
 **The bar:** {{ACCEPTANCE_BAR}}
 
 ## The owner's standing rulings (binding on every lane)
-- **Goals, not tests.** Every task is framed by goal, vision, what we are building and what has not worked.
-- **The owner judges by looking.** Evidence is screenshots, rendered output and videos from the real product path,
-  not counts, scores or claims.
-- **Vault first.** Know what the project already knows, and write findings back.
-- **Escalate, don't guess, on what only the owner can decide** (workers: in your report's `## Open questions`;
-  the supervisor asks via ASK_OWNER). Anything the product can expose as a user
-  setting is a setting with sensible defaults, not an owner question.
-{{EXTRA_RULINGS}}
+They live in the repo's `.claude/rules/owner-rulings.md` (versioned, owner-only), which every Claude
+session there loads and every consult carries. This lane's own rulings are in `rulings.md`.
+**Escalate, don't guess, on what only the owner can decide** (workers: in your report's
+`## Open questions`; the supervisor asks via ASK_OWNER).
 
 ## What has NOT worked (so nobody repeats it)
 {{FAILURES}}

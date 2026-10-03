@@ -63,6 +63,6 @@ org root (see [[Design/lanes-and-supervisors]]).
 - **Reports & audits**: `Reports/` (the session registry: [[Reports/audits/SESSION-REGISTRY]])
 - **Research** (teardowns, library evaluations, captures): `Research/`
 - **Evidence** (NOT in the vault): `evidence/` at the repo root, linked by path
-- **Rules Claude loads**: `.claude/rules/` — gate-independence, no-bloat, goals-not-tests,
+- **Rules Claude loads**: `.claude/rules/` — owner-rulings, gate-independence, no-bloat, goals-not-tests,
   vault-first, evidence-and-honesty, protected-paths
 - **The org's own board**: `bash scripts/gates/org-board.sh`
