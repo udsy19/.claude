@@ -8,12 +8,13 @@
 #   bash scripts/test-setup-matrix.sh          (KEEP=1 keeps the sandbox; the results table is printed last)
 # Every row ends PASS (assertions held), REFUSED (the named message, and nothing written), or UNTESTABLE
 # (with the reason); a row whose assertions fail is FAIL and fails the run.
+# shellcheck disable=SC2016  # the fakes' bodies are single-quoted on purpose: they expand when the fake runs
 set -u
 KIT=$(cd "$(dirname "$0")/.." && pwd); SC=$KIT/scripts; ENGINE=$SC/setup.mjs
 SB=$(mktemp -d "${TMPDIR:-/tmp}/setup-matrix.XXXXXX"); SB=$(cd "$SB" && pwd -P)
 FAKES=$SB/fakes; REAL=$SB/real; LOG=$SB/calls.log; RES=$SB/results.md
 PASS=0; FAIL=0; ROWFAIL=0
-cleanup() { [ "${KEEP:-}" = 1 ] && echo "sandbox kept: $SB" || rm -rf "$SB"; }
+cleanup() { if [ "${KEEP:-}" = 1 ]; then echo "sandbox kept: $SB"; else rm -rf "$SB"; fi; }
 trap cleanup EXIT
 check() { if eval "$2"; then PASS=$((PASS+1)); echo "  ok   $1"; else FAIL=$((FAIL+1)); ROWFAIL=1; echo "  FAIL $1"; fi; }
 has() { grep -qF -- "$2" "$1" 2>/dev/null; }
@@ -45,7 +46,7 @@ fake flock     'exit 0'
 fake loginctl  'exit 0'
 fake claude    'case "$*" in *"reply with just OK"*) echo OK;; esac'
 fake codex     'echo "Logged in (fake)"'
-path_without() { local d=$SB/path-$(echo "x $*" | cksum | cut -d' ' -f1); mkdir -p "$d"
+path_without() { local d; d=$SB/path-$(echo "x $*" | cksum | cut -d' ' -f1); mkdir -p "$d"
   for f in "$FAKES"/*; do case " $* " in *" $(basename "$f") "*) ;; *) ln -sf "$f" "$d/";; esac; done; echo "$d:$REAL"; }
 export PATH; PATH=$(path_without)
 
@@ -270,6 +271,41 @@ eng "$B/run2" -- --scope vault --install project --answers "$B/a.json"
 check "the vault takes back its unmodified copies, and says so" "[ $(rc "$B/run2") = 0 ] && [ ! -e '$P/.claude/agents/code-reviewer.md' ] && has '$B/run2.out' 'removed unmodified copies: code-reviewer.md'"
 commit_all; check "...and the board is green" "(cd \"\$P\" && bash scripts/gates/org-board.sh >/dev/null 2>&1)"
 done_row PASS "base then vault (project) → personas removed (\"removed unmodified copies: code-reviewer.md, …\"), org-board.sh exit 0"
+
+# ── 4. the vault gate (hooks/vault-gate.sh), run through the settings.json command a global install registers ──
+box g fresh global; ans "$B/a.json" base global; eng "$B/run" -- --scope base --install global --answers "$B/a.json"
+GATE_CMD=$(jq -r '.hooks.PreToolUse[] | select(.matcher | test("Write")) | .hooks[].command | select(test("vault-gate"))' "$HOME/.claude/settings.json")
+export CLAUDE_VAULT_GATE_DIR=$B/gate
+gate() {   # gate <dir> <session> [ENV=…] → $B/gate.rc, $B/gate.err
+  local d=$1 sid=$2; shift 2
+  printf '{"session_id":"%s","cwd":"%s","hook_event_name":"PreToolUse","tool_name":"Edit","tool_input":{"file_path":"%s/x"}}' "$sid" "$d" "$d" |
+    (cd "$d" && env CLAUDE_PROJECT_DIR="$d" "$@" sh -c "$GATE_CMD") > "$B/gate.out" 2> "$B/gate.err"; echo $? > "$B/gate.rc"; }
+grc() { cat "$B/gate.rc"; }
+row G1 "gate: git repo without a vault"
+check "the global settings.json registers the gate on write tools" "[ -n \"\$GATE_CMD\" ]"
+gate "$P" s1 A=1; check "first write of a session: blocked (exit 2), stderr says run /setup" "[ $(grc) = 2 ] && has '$B/gate.err' 'run \`/setup\` here'"
+gate "$P" s1 A=1; check "second write, same session: allowed (exit 0, silent)" "[ $(grc) = 0 ] && [ ! -s '$B/gate.err' ]"
+gate "$P" s2 A=1; check "a new session is reminded once again" "[ $(grc) = 2 ]"
+done_row PASS "PreToolUse via settings.json: exit 2 + \"run \`/setup\` here\" once, then exit 0 for the session"
+row G2 "gate: ORG_VAULT=off"
+gate "$P" s3 ORG_VAULT=off; check "silent, exit 0" "[ $(grc) = 0 ] && [ ! -s '$B/gate.err' ]"
+gate "$P" s3 ORG_VAULT=off; check "...logged once for the session" "[ \$(grep -c 'ORG_VAULT=off' '$B/gate/vault-gate.log') = 1 ]"
+done_row PASS "exit 0, no stderr; vault-gate.log has exactly one 'ORG_VAULT=off' line after two writes"
+row G3 "gate: .claude/no-vault marker"
+mkdir -p "$P/.claude" && : > "$P/.claude/no-vault"
+gate "$P" s4 A=1; gate "$P" s4 A=1; check "silent, exit 0, logged once" "[ $(grc) = 0 ] && [ ! -s '$B/gate.err' ] && [ \$(grep -c 'no-vault' '$B/gate/vault-gate.log') = 1 ]"
+rm "$P/.claude/no-vault"
+done_row PASS "exit 0, no stderr; one '.claude/no-vault' log line"
+row G4 "gate: headless worker in a repo without a vault"
+gate "$P" s5 AGENT_NAME=w1 AGENT_ORG_HEADLESS=1; check "silent, exit 0, nothing logged" "[ $(grc) = 0 ] && [ ! -s '$B/gate.err' ] && ! grep -q s5 '$B/gate/vault-gate.log'"
+done_row PASS "AGENT_NAME/AGENT_ORG_HEADLESS → exit 0, no stderr, no log line"
+row G5 "gate: not a git repository"
+mkdir -p "$B/plain dir"; gate "$B/plain dir" s6 A=1; check "silent, exit 0" "[ $(grc) = 0 ] && [ ! -s '$B/gate.err' ]"
+done_row PASS "exit 0, no stderr"
+row G6 "gate: repo with a vault"
+box g6 vault project; gate "$P" s7 A=1; check "silent, exit 0" "[ $(grc) = 0 ] && [ ! -s '$B/gate.err' ]"
+done_row PASS "exit 0, no stderr"
+unset CLAUDE_VAULT_GATE_DIR
 
 row N11 "repo path with a space, in every scope"
 check "every base/vault/org row above ran in \"my proj\" and passed" "! grep -E '^\| (P|O)[0-9]+ ' '$RES' | grep -q '| FAIL |'"
