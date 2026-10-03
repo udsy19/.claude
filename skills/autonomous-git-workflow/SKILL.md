@@ -1,6 +1,6 @@
 ---
 name: autonomous-git-workflow
-description: Commits continuously after each working change with simple structured messages, and parallelizes feature work using git worktrees — reserving branches for large or divergent efforts. Use whenever code changes and needs saving to version control: implementing features, adding functionality, fixing bugs, or working on several features at once.
+description: "Commits continuously after each working change with simple structured messages, and parallelizes feature work using git worktrees — reserving branches for large or divergent efforts. Use whenever code changes and needs saving to version control: implementing features, adding functionality, fixing bugs, or working on several features at once."
 ---
 
 # Autonomous Git Workflow
