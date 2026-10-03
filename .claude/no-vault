@@ -1,0 +1,2 @@
+This config repo is not a project: no agent-org vault here. The vault gate (hooks/vault-gate.sh) stays silent
+in any repo with this file.

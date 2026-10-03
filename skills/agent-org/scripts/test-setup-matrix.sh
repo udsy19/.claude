@@ -307,6 +307,10 @@ done_row PASS "exit 0, no stderr"
 row G6 "gate: repo with a vault"
 box g6 vault project; gate "$P" s7 A=1; check "silent, exit 0" "[ $(grc) = 0 ] && [ ! -s '$B/gate.err' ]"
 done_row PASS "exit 0, no stderr"
+row G7 "gate: inside this config repo itself"
+CONF_TOP=$(git -C "$KIT" rev-parse --show-toplevel)
+gate "$CONF_TOP" s8 A=1; check "the config repo ships .claude/no-vault: silent, exit 0" "[ -f '$CONF_TOP/.claude/no-vault' ] && [ $(grc) = 0 ] && [ ! -s '$B/gate.err' ]"
+done_row PASS "the config repo's own .claude/no-vault → exit 0, no stderr (no nudge in its own clone)"
 unset CLAUDE_VAULT_GATE_DIR
 
 row N11 "repo path with a space, in every scope"
