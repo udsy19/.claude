@@ -67,7 +67,7 @@ plistlib.dump({"Label": sys.argv[2], "ProgramArguments": ["/bin/bash", "-c", sys
       "$(printf %s "$ORG_ROOT" | sed 's/%/%%/g')" "$PATH" "$x" > "$d/$LABEL.service"
     printf '[Unit]\nDescription=agent-org hourly (%s)\n[Timer]\nOnCalendar=*-*-* *:07:00\nPersistent=true\n[Install]\nWantedBy=timers.target\n' \
       "$(printf %s "$ORG_ROOT" | sed 's/%/%%/g')" > "$d/$LABEL.timer"
-    systemctl --user daemon-reload && systemctl --user enable --now "$LABEL.timer" || { echo "systemctl --user enable failed"; exit 4; }
+    if ! { systemctl --user daemon-reload && systemctl --user enable --now "$LABEL.timer"; }; then echo "systemctl --user enable failed"; exit 4; fi
     echo "hourly job: systemd --user timer $LABEL"
   else
     tmux has-session -t "$LABEL" 2>/dev/null || tmux new-session -d -s "$LABEL" "while :; do bash -c $(printf %q "$TICK"); sleep 3600; done"

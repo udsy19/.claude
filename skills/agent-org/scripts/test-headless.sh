@@ -15,7 +15,7 @@ KIT=$(cd "$(dirname "$0")/.." && pwd)
 CONF=$(cd "$KIT/../.." && pwd)          # the .claude config repo: settings.json, hooks/, skills/
 SB=$(mktemp -d /tmp/headless-test.XXXXXX)
 REPO="$SB/my repo"
-cleanup() { [ "${KEEP:-}" = 1 ] && echo "sandbox kept: $SB" || rm -rf "$SB"; }
+cleanup() { if [ "${KEEP:-}" = 1 ]; then echo "sandbox kept: $SB"; else rm -rf "$SB"; fi; }
 trap cleanup EXIT
 export HOME="$SB/home"; mkdir -p "$HOME"; ln -s "$CONF" "$HOME/.claude"   # a global install
 export TMPDIR="$SB/tmp"; mkdir -p "$TMPDIR"                               # the contract hook's markers
@@ -41,6 +41,7 @@ hook() {
   local out="" rc=0 c o r
   while IFS= read -r c; do
     [ -n "$c" ] || continue
+    # shellcheck disable=SC2046  # role_env prints NAME=VALUE words for env; splitting them is the point
     o=$(printf '%s' "$5" | env -i PATH="$PATH" HOME="$HOME" TMPDIR="$TMPDIR" CLAUDE_PROJECT_DIR="$REPO" $(role_env "$4") sh -c "$c" 2>&1); r=$?
     out="$out$o"; [ $r -gt $rc ] && rc=$r
   done <<< "$cmds"
@@ -48,7 +49,7 @@ hook() {
 }
 G="$CONF/settings.json"; P="$REPO/.claude/settings.json"
 write() {   # write <role> <path>: the contract hook's verdict on a write, after the once-per-session delivery
-  local s="s$RANDOM$RANDOM" j
+  local s="s$RANDOM$RANDOM"
   j() { printf '{"session_id":"%s","tool_name":"Write","tool_input":{"file_path":"%s"}}' "$s" "$1"; }
   hook "$P" PreToolUse Write "$1" "$(j "$REPO/src/warmup.js")" > /dev/null
   local r; r=$(hook "$P" PreToolUse Write "$1" "$(j "$2")"); [ "${r%%	*}" = 2 ] && echo REFUSED || echo ok
@@ -56,7 +57,7 @@ write() {   # write <role> <path>: the contract hook's verdict on a write, after
 
 PASS=0; FAIL=0; TABLE=""
 row() {   # row <label> <expected per role, space-separated> <function producing a cell for a role>
-  local label="$1" want=($2) fn="$3" line i=0 got cell
+  local label="$1" fn="$3" line i=0 got cell want; read -ra want <<< "$2"
   line=$(printf '| %-46s' "$label")
   for r in $ROLES; do
     got=$($fn "$r"); cell="$got"

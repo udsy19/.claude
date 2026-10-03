@@ -14,7 +14,7 @@ INT=$(j 'd.get("sync",{}).get("interval_s",300)'); PUSH_MAIN=$(j 'd.get("sync",{
 GLOBS=$(j '" ".join(d.get("sync",{}).get("branch_globs",["lane/*"]))')
 L=$ORG_ROOT/logs/git-sync.log; mkdir -p "$ORG_ROOT/logs"
 while true; do
-  cd "$R"
+  cd "$R" || exit 1
   if git fetch -q origin "$MAIN" 2>/dev/null; then
     lb=$(git rev-list --left-right --count "$MAIN"...origin/"$MAIN"); a=${lb%%	*}; b=${lb##*	}
     if [ "$b" -gt 0 ] && [ "$a" -eq 0 ]; then

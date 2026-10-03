@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016  # fakes and generated scripts are written with literal $vars on purpose
 # Offline test of the host scripts (bootstrap-host.sh, lanes.sh, git-sync.sh, state-snapshot.sh, build-queue) in a
 # throw-away sandbox: a temp HOME, a temp ORG_ROOT, a repo with a bare origin, and fakes for uname, id, useradd,
 # chown, crontab, launchctl, systemctl, tmux, timeout, flock, claude, codex and cargo. PATH holds ONLY those fakes
@@ -10,7 +11,7 @@ KIT=$(cd "$(dirname "$0")/.." && pwd); SC=$KIT/scripts
 SB=$(mktemp -d "${TMPDIR:-/tmp}/host-test.XXXXXX"); SB=$(cd "$SB" && pwd -P)
 FAKES=$SB/fakes; REAL=$SB/real; LOG=$SB/calls.log
 PASS=0; FAIL=0
-cleanup() { [ "${KEEP:-}" = 1 ] && echo "sandbox kept: $SB" || rm -rf "$SB"; }
+cleanup() { if [ "${KEEP:-}" = 1 ]; then echo "sandbox kept: $SB"; else rm -rf "$SB"; fi; }
 trap cleanup EXIT
 check() { if eval "$2"; then PASS=$((PASS+1)); echo "  ok   $1"; else FAIL=$((FAIL+1)); echo "  FAIL $1"; fi; }
 has() { grep -qF -- "$2" "$1" 2>/dev/null; }
@@ -41,7 +42,7 @@ fake claude    'case "$*" in *"reply with just OK"*) echo OK;; esac'
 fake codex     'echo "Logged in (fake)"'
 fake loginctl  'exit 0'
 # PATH = the fakes (minus any named) + the real-tool links. Nothing else.
-path_without() { local d=$SB/path-$(echo "x $*" | cksum | cut -d' ' -f1); mkdir -p "$d"
+path_without() { local d; d=$SB/path-$(echo "x $*" | cksum | cut -d' ' -f1); mkdir -p "$d"
   for f in "$FAKES"/*; do case " $* " in *" $(basename "$f") "*) ;; *) ln -sf "$f" "$d/";; esac; done; echo "$d:$REAL"; }
 export PATH; PATH=$(path_without)
 
@@ -130,7 +131,7 @@ check "push_main true: pushed" "[ \$(git -C '$SB/origin.git' rev-parse main) = \
 check "lane/* pushed as a refspec even with a lane/ dir in the checkout" "git -C '$SB/origin.git' show-ref -q --verify refs/heads/lane/t/integration"
 
 echo "== B4 build-queue: finds the real binary, locks under ORG_ROOT/locks"
-mkorg; boot FAKE_OS=Darwin FAKE_UID=501; cd "$SB"
+mkorg; boot FAKE_OS=Darwin FAKE_UID=501; cd "$SB" || exit 1
 for d in realbin alt alt2; do mkdir -p "$SB/$d"; printf '#!/bin/sh\necho "REAL-%s $*"\n' "$d" > "$SB/$d/cargo"; chmod +x "$SB/$d/cargo"; done
 BQ() { env -u REAL_cargo -u ORG_ROOT -u LANE_ROOT -u BUILD_QUEUE_LOCK_DIR PATH="$ORG/bin:$SB/realbin:$PATH" "$@"; }
 check "wrapper installed by a local bootstrap" "[ -L '$ORG/bin/cargo' ]"

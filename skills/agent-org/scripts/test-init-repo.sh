@@ -11,7 +11,7 @@ KIT=$(cd "$(dirname "$0")/.." && pwd)
 SB=$(mktemp -d /tmp/init-repo-test.XXXXXX)
 REPO="$SB/my repo"
 PASS=0; FAIL=0
-cleanup() { [ "${KEEP:-}" = 1 ] && echo "sandbox kept: $SB" || rm -rf "$SB"; }
+cleanup() { if [ "${KEEP:-}" = 1 ]; then echo "sandbox kept: $SB"; else rm -rf "$SB"; fi; }
 trap cleanup EXIT
 check() { if eval "$2"; then PASS=$((PASS+1)); echo "  ok   $1"; else FAIL=$((FAIL+1)); echo "  FAIL $1"; fi; }
 export HOME="$SB/home"; mkdir -p "$HOME"
@@ -38,6 +38,7 @@ git commit -q --allow-empty -m root && git checkout -q -b agent-org-setup
 
 echo "== a missing key refuses before writing"
 vars "$SB/partial.json" main EXTRA_RULINGS
+# shellcheck disable=SC2034  # out is read by the check string below, which check() evals
 out=$(install "$REPO" "$SB/partial.json" 2>&1); rc=$?
 check "missing EXTRA_RULINGS: exit 2, names the key" "[ $rc = 2 ] && printf '%s' \"\$out\" | grep -q EXTRA_RULINGS"
 check "...and wrote nothing" "[ -z \"\$(git status --porcelain)\" ]"

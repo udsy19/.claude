@@ -91,6 +91,7 @@ fresh_case "G  no note at all, dispatches exist -> must FIRE" none 2 ""
 # GNU `date` reads `-r` as a reference FILE, so `date -r <epoch>` fails on Linux. A stub that
 # behaves that way proves the message no longer depends on BSD date (it once said "written ,").
 GNU_DATE=$(mktemp -d); REAL_DATE=$(command -v date)
+# shellcheck disable=SC2016  # the fake date script is written with literal $vars
 printf '#!/bin/bash\nfor a in "$@"; do [ "$a" = -r ] && { echo "date: $2: No such file or directory" >&2; exit 1; }; done\nexec %s "$@"\n' "$REAL_DATE" > "$GNU_DATE/date"; chmod +x "$GNU_DATE/date"
 CASE_PATH="$GNU_DATE:$PATH" fresh_case "M  GNU date (no -r epoch) -> STALE still says HH:MM" -60 2 "STALE: written [0-9][0-9]:[0-9][0-9],"
 rm -rf "$GNU_DATE"

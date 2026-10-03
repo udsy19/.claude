@@ -14,7 +14,8 @@ ORG_ROOT=${1:?ORG_ROOT}; cmd=${2:?command}; shift 2
 CFG=$ORG_ROOT/org.json; KIT=$(cd "$(dirname "$0")" && pwd)
 j() { python3 -c "import json,sys;d=json.load(open(sys.argv[2]));print(eval(sys.argv[1]))" "$1" "$CFG"; }
 REPO=$(j 'd["repo"]'); MAIN=$(j 'd.get("main_branch","main")')
-all() { ls -d "$ORG_ROOT"/lanes/*/ 2>/dev/null | xargs -n1 basename; }
+all() { local d; for d in "$ORG_ROOT"/lanes/*/; do [ -d "$d" ] && basename "$d"; done; return 0; }
+named_or_all() { if [ $# -gt 0 ]; then printf '%s\n' "$@"; else all; fi; }   # lane names are [a-z0-9-]
 next_round() { local n; n=$(grep -oE "CONSULT [0-9]+" "$ORG_ROOT/lanes/$1/lane.log" 2>/dev/null | grep -oE "[0-9]+" | sort -n | tail -1); echo $(( ${n:-0} + 1 )); }
 start_one() { local k=$1 D=$ORG_ROOT/lanes/$1
   tmux has-session -t "lane-$k" 2>/dev/null && { echo "lane-$k already running"; return; }
@@ -42,14 +43,15 @@ PY
     cd "$REPO"; git show-ref -q --verify "refs/heads/lane/$k/integration" || git branch "lane/$k/integration" "$MAIN"
     [ -e "$D/int/.git" ] || git worktree add -q "$D/int" "lane/$k/integration"
     echo "lane $k created at $D — fill $D/context.md and the GOAL section of $D/supervisor-brief.md before starting";;
-  start) for k in ${@:-$(all)}; do start_one "$k"; done;;
-  restart) for k in ${@:-$(all)}; do D=$ORG_ROOT/lanes/$k
+  start) for k in $(named_or_all "$@"); do start_one "$k"; done;;
+  restart) for k in $(named_or_all "$@"); do D=$ORG_ROOT/lanes/$k
       for q in $(pgrep -f "supervise.py $D"); do kill "$q"; done; sleep 2; tmux kill-session -t "lane-$k" 2>/dev/null || true
       start_one "$k"; done;;
   stop) touch "$ORG_ROOT/lanes/${1:?name}/STOP"; echo "STOP set for $1";;
   status) for k in $(all); do echo "== $k: $(tail -1 "$ORG_ROOT/lanes/$k/lane.log" 2>/dev/null)"; done
+    # shellcheck disable=SC2009  # BSD pgrep -a prints PIDs only, so read full command lines from ps
     ps -ww -eo args | grep -oE "You are agent .[a-z0-9-]+." | sort -u || true;;   # ps, not pgrep -a (BSD pgrep prints PIDs only)
-  gc) for k in ${@:-$(all)}; do D=$ORG_ROOT/lanes/$k
+  gc) for k in $(named_or_all "$@"); do D=$ORG_ROOT/lanes/$k
       P=$(python3 -c "import json,sys;d=json.load(open(sys.argv[1]));print(d.get('branch_prefix','lane/'+d['name']))" "$D/lane.json")
       before=$(du -sk "$D" | cut -f1); nw=0
       merged=$(cd "$REPO" && git branch --merged "$P/integration" --format='%(refname:short)')

@@ -13,6 +13,7 @@ META_SKILL="$SKILLS_DIR/using-agent-skills/SKILL.md"
 
 if ! command -v jq >/dev/null 2>&1; then
   # Plain text (not JSON) is added to context as is.
+  # shellcheck disable=SC2016  # the backticks are literal text in the message
   echo 'agent-skills: jq is required for the session-start hook but was not found on PATH. Install jq (e.g. `brew install jq` or `apt-get install jq`) to enable meta-skill injection. Skills remain available individually.'
   exit 0
 fi

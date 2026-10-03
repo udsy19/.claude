@@ -73,6 +73,7 @@ fi
 # The independent log proves dispatches happened today; the supervisor's own dispatch table
 # (the mission file) says when the LAST one was recorded; the session note must be at least
 # that fresh. Sub-sub-agent stops also land in the log, so the log's mtime alone over-fires.
+# shellcheck disable=SC2012  # newest by mtime; session notes are our own YYYY-MM-DD-slug.md names
 note=$(ls -t "$ROOT/vault/Sessions"/"$today"-*.md 2>/dev/null | head -1)
 # COMPARE THE NOTE TO THE LAST DISPATCH, NOT TO THE MISSION FILE.
 #
