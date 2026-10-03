@@ -128,5 +128,26 @@ bash "$SC/git-sync.sh" "$ORG" --once; rm -rf "$SB/repo/lane"
 check "push_main true: pushed" "[ \$(git -C '$SB/origin.git' rev-parse main) = \$(git -C '$SB/repo' rev-parse main) ]"
 check "lane/* pushed as a refspec even with a lane/ dir in the checkout" "git -C '$SB/origin.git' show-ref -q --verify refs/heads/lane/t/integration"
 
+echo "== B4 build-queue: finds the real binary, locks under ORG_ROOT/locks"
+mkorg; boot FAKE_OS=Darwin FAKE_UID=501; cd "$SB"
+for d in realbin alt alt2; do mkdir -p "$SB/$d"; printf '#!/bin/sh\necho "REAL-%s $*"\n' "$d" > "$SB/$d/cargo"; chmod +x "$SB/$d/cargo"; done
+BQ() { env -u REAL_cargo -u ORG_ROOT -u LANE_ROOT -u BUILD_QUEUE_LOCK_DIR PATH="$ORG/bin:$SB/realbin:$PATH" "$@"; }
+check "wrapper installed by a local bootstrap" "[ -L '$ORG/bin/cargo' ]"
+check "light subcommand passes through to the first cargo on PATH outside the wrapper's dir" "[ \"\$(BQ cargo --version)\" = 'REAL-realbin --version' ]"
+check "REAL_cargo wins" "[ \"\$(BQ REAL_cargo='$SB/alt/cargo' cargo --version)\" = 'REAL-alt --version' ]"
+python3 - "$ORG/org.json" "$SB/alt2/cargo" <<'PY2'
+import json,sys; d=json.load(open(sys.argv[1])); d["build_queue"]["real"]={"cargo":sys.argv[2]}; json.dump(d,open(sys.argv[1],"w"))
+PY2
+check "org.json build_queue.real.cargo next (ORG_ROOT found from LANE_ROOT)" "[ \"\$(BQ LANE_ROOT='$ORG/lanes/t' cargo --version)\" = 'REAL-alt2 --version' ]"
+check "org.json found from the wrapper's own dir too" "[ \"\$(BQ cargo --version)\" = 'REAL-alt2 --version' ]"
+python3 - "$ORG/org.json" <<'PY2'
+import json,sys; d=json.load(open(sys.argv[1])); d["build_queue"].pop("real"); json.dump(d,open(sys.argv[1],"w"))
+PY2
+out=$(env -u REAL_cargo PATH="$ORG/bin:$PATH" cargo --version 2>&1); r=$?
+check "no real cargo anywhere: exit 127 with a one-line reason" "[ $r = 127 ] && [ \"\$(printf '%s' \"$out\" | wc -l | tr -d ' ')\" = 0 ] && case \"$out\" in *'no real cargo'*) true;; *) false;; esac"
+check "heavy subcommand runs through a slot lock in ORG_ROOT/locks" "[ \"\$(BQ LANE_ROOT='$ORG/lanes/t' cargo build x)\" = 'REAL-realbin build x' ] && [ -f '$ORG/locks/cargo.1' ]"
+check "BUILD_QUEUE_LOCK_DIR overrides the lock dir" "BQ BUILD_QUEUE_LOCK_DIR='$SB/lk' cargo test >/dev/null && [ -f '$SB/lk/cargo.1' ]"
+check "nothing written under /srv" "! has '$LOG' /srv"
+
 echo "== $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]
