@@ -238,5 +238,15 @@ bash "$SC/state-snapshot.sh" "$ORG" > "$SB/snap2.out" 2>&1; r=$?
 check "state-wt is a plain dir: refuses (exit 1), commits nothing anywhere" "[ $r = 1 ] && has '$SB/snap2.out' 'no snapshot worktree' && [ \$(git -C '$SB/repo' rev-parse HEAD) = $h ] && [ -z \"\$(git -C '$SB/repo' status --porcelain)\" ]"
 rm -rf "$ORG/state-wt"; git -C "$SB/repo" worktree prune
 
+echo "== bootstrap needs no GNU timeout (stock macOS)"
+mkorg; PATH=$(path_without timeout) boot FAKE_OS=Darwin FAKE_UID=501
+check "no timeout on PATH: bootstrap ok, the login probe still answers" "[ $(rc) = 0 ] && has '$SB/boot.out' 'worker claude: OK'"
+printf '#!/bin/bash\nsleep 5\n' > "$SB/slowclaude"; chmod +x "$SB/slowclaude"
+python3 -c 'import subprocess,sys,time
+src=open(sys.argv[1]).read(); i=src.index("to() {"); j=src.index("\"$@\"; }", i)+len("\"$@\"; }")
+open(sys.argv[2],"w").write(src[i:j]+"\n")' "$SC/bootstrap-host.sh" "$SB/to.sh"
+out=$(bash -c ". '$SB/to.sh'; to 1 '$SB/slowclaude'"); r=$?
+check "the probe gives up after its timeout (exit 124, says so)" "[ $r = 124 ] && [ \"$out\" = 'no answer in 1s' ]"
+
 echo "== $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

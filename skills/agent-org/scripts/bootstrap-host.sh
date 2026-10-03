@@ -98,7 +98,6 @@ if [ "$MODE" = remote ] && [ -n "$U" ] && [ "$ME" != "$U" ]; then
 
 # ── local, or remote phase 2: everything below runs as the one user that runs the org ──
 need git "install git"; need tmux "install tmux"; need python3 "install python3"; need rsync "install rsync"
-need timeout "coreutils (Linux) / brew install coreutils (mac)"
 need "$CL" "npm i -g @anthropic-ai/claude-code   (then log in: claude → /login); or fix claude_bin in org.json"
 [ "$SUPB" = codex ] && need codex "npm i -g @openai/codex   (then: codex login --device-auth)"
 [ -n "$MISSING" ] && { echo "install the missing tools, then re-run"; exit 3; }
@@ -119,7 +118,10 @@ tmux has-session -t gitsync 2>/dev/null || tmux new-session -d -s gitsync "$(pri
 if [ "$MODE" = remote ] && command -v crontab >/dev/null; then   # phase 1 (root) wrote it
   crontab -l 2>/dev/null | grep -qF -- "$TAG" || { echo "no hourly line for $ORG_ROOT in $ME's crontab — re-run phase 1 as root"; exit 4; }
 else schedule; fi
-# login checks (report, never perform)
-echo "worker claude: $(cd /tmp && timeout 120 "$CL" -p 'reply with just OK' --model "$PM" 2>&1 | tail -1)"
+# login checks (report, never perform); timed in python: stock macOS has no GNU timeout
+to() { python3 -c 'import subprocess,sys
+try: sys.exit(subprocess.run(sys.argv[2:], timeout=int(sys.argv[1])).returncode)
+except subprocess.TimeoutExpired: print("no answer in %ss" % sys.argv[1]); sys.exit(124)' "$@"; }
+echo "worker claude: $(cd /tmp && to 120 "$CL" -p 'reply with just OK' --model "$PM" 2>&1 | tail -1)"
 [ "$SUPB" = codex ] && echo "codex: $(codex login status 2>&1 | head -1)"
 echo "host ready ($MODE, as $ME). Next: lanes.sh $ORG_ROOT new <lane> \"<goal>\" …  then  lanes.sh $ORG_ROOT start"
