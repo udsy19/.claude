@@ -29,6 +29,7 @@ git init -q -b main "$REPO" && cd "$REPO" || exit 2
 mkdir -p vault/Reports scripts/lib
 cp "$KIT/templates/repo/scripts/vault-hubs.mjs" scripts/; cp "$KIT/templates/repo/scripts/lib/argv.mjs" scripts/lib/
 printf '# Home\n\nStart here. [[Map]]\n' > vault/Home.md
+mkdir -p .claude/rules && printf '# Owner rulings\n\n- RULING-PROJECT-42: the standing law of the project\n' > .claude/rules/owner-rulings.md
 printf '# Agents\n\nThe contract.\n' > vault/AGENTS.md      # lanes.sh new refuses a main without it
 printf '# First report\n\nMeasured something.\n' > vault/Reports/first.md
 node scripts/vault-hubs.mjs >/dev/null || { echo "vault-hubs failed in the sandbox"; exit 2; }
@@ -106,6 +107,7 @@ check "log lines carry the date" "grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}
 S=$SB/seen
 # prompt budget
 check "rulings.md injected in full" "has $S/1.txt RULING-KEEP-7"
+check "D7: project .claude/rules/owner-rulings.md inlined into the consult" "has $S/1.txt \"## Owner rulings: the project's standing rules\" && has $S/1.txt RULING-PROJECT-42"
 check "only the newest 10 raw owner answers" "has $S/1.txt answer-A06 && has $S/1.txt answer-A15 && ! has $S/1.txt answer-A05"
 check "report digest: TL;DR + tail" "has $S/2.txt TLDR-alpha && has $S/2.txt NEXT-STEP-alpha"
 check "report digest: middle omitted" "! has $S/2.txt MIDDLE-SECRET-alpha && has $S/2.txt 'chars omitted'"
@@ -232,7 +234,7 @@ git init -q --bare "$SP/origin.git"; git init -q -b main "$SP/repo"
   && git remote add origin "$SP/origin.git" && git push -q origin main )
 cat > "$SP/sup.sh" <<EOF
 #!/usr/bin/env bash
-n=\$(( \$(cat "$SP/count" 2>/dev/null || echo 0) + 1 )); echo \$n > "$SP/count"; cat >/dev/null
+n=\$(( \$(cat "$SP/count" 2>/dev/null || echo 0) + 1 )); echo \$n > "$SP/count"; cat > "$SP/seen-\$n.txt"
 echo "role=\$ORG_ROLE headless=\$AGENT_ORG_HEADLESS" > "$SP/sup.env"
 case \$n in
   1) printf '=== AGENT name=alpha model=opus ===\ndo alpha\n=== END AGENT ===\n';;
@@ -251,6 +253,7 @@ check "space: agent ran and reported (rc $src)" "[ $src = 0 ] && grep -q 'agent 
 check "space: MERGE ok and the work is on the lane branch" "grep -q 'MERGE lane/s/alpha ok' \"$SL\" && git -C \"$SP/repo\" show lane/s/integration:work-alpha.txt >/dev/null 2>&1"
 check "worker env: ORG_LANE, AGENT_ORG_HEADLESS, no ORG_ROLE" "grep -qx 'lane=s headless=1 role=' \"$SP/org/lanes/s/env-alpha.seen\""
 check "supervisor env: ORG_ROLE=supervisor, AGENT_ORG_HEADLESS" "grep -qx 'role=supervisor headless=1' \"$SP/sup.env\""
+check "D7: no owner-rulings.md in the project: no heading, no error" "grep -q '^# CONSULT 1' \"$SP/seen-1.txt\" && ! grep -q \"project's standing rules\" \"$SP/seen-1.txt\""
 
 # ── B8: no GNU timeout; agents survive a loop restart and are adopted; a deadline kills the process group ──
 echo "== agent lifetime: restart adoption and deadlines"

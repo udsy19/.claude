@@ -170,15 +170,23 @@ def memory_tail():
 
 
 # ── prompt sections ──────────────────────────────────────────────────────────────────────────────────
+def project_rulings():
+    """The project's standing rulings (.claude/rules/owner-rulings.md, versioned and protected). Claude sessions
+    auto-load .claude/rules; a codex supervisor does not, so every consult carries them. Absent: nothing."""
+    text = rd(f"{REPO}/.claude/rules/owner-rulings.md").strip()
+    return f"\n## Owner rulings: the project's standing rules ({REPO}/.claude/rules/owner-rulings.md, binding)\n{text}\n" if text else ""
+
+
 def owner_block():
-    """rulings.md (curated current law) in full + the newest raw owner-answers entries. Without rulings.md
-    (lanes created before it existed) the whole owner-answers.md, as before."""
+    """The project's standing rulings, then rulings.md (this lane's curated law) in full + the newest raw
+    owner-answers entries. Without rulings.md (lanes created before it existed) the whole owner-answers.md."""
     raw = rd(f"{R}/owner-answers.md", "(none)")
     if not os.path.exists(f"{R}/rulings.md"):
-        return f"\n## Owner answers (binding)\n{raw}\n"
+        return project_rulings() + f"\n## Owner answers (binding)\n{raw}\n"
     entries = re.split(r"(?m)^(?=## )", raw)[1:]          # [0] is the file's preamble
     recent = entries[-OWNER_ANSWERS_RECENT:]
-    return (f"\n## Owner rulings: the current law (binding; curated by the overseer)\n{rd(f'{R}/rulings.md')}\n"
+    return (project_rulings()
+            + f"\n## Owner rulings: the current law (binding; curated by the overseer)\n{rd(f'{R}/rulings.md')}\n"
             f"\n## Owner answers: the newest {len(recent)} of {len(entries)} raw entries (full log: {R}/owner-answers.md)\n"
             + "".join(recent) + "\n")
 
