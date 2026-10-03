@@ -349,6 +349,32 @@ check "B2: LAND refused while the repo has another branch checked out (rc $prc)"
 check "B2: ...main and the parked branch are untouched" "[ \$(git -C $REPO rev-parse main) = $main1 ] && [ \$(git -C $REPO rev-parse parked) = $main1 ]"
 git -C "$REPO" checkout -q main
 
+# ── D1/D2: per-lane daily spend caps, running totals ──
+echo "== budget caps"
+setorg() { python3 -c "import json,sys; d=json.load(open(sys.argv[1])); d.update(json.loads(sys.argv[2])); json.dump(d,open(sys.argv[1],'w'))" "$@"; }
+O11=$SB/org11; L11=$O11/lanes/bud
+newlane "$O11" bud 120 '=== PLAN ===\none\n=== END PLAN ===\n' '=== PLAN ===\ntwo\n=== END PLAN ===\n' '=== PLAN ===\nthree\n=== END PLAN ===\n'
+setorg "$O11/org.json" '{"max_consults_per_day": 2}'
+( cd "$L11" && ORG_ROOT=$O11 exec python3 "$O11/supervise.py" "$L11" 1 > "$SB/bud.out" 2>&1 ) & BP=$!
+for _ in $(seq 1 150); do has $L11/lane.log 'BUDGET cap reached' && break; sleep 0.2; done
+sleep 2; touch "$L11/STOP"; for _ in $(seq 1 50); do kill -0 $BP 2>/dev/null || break; sleep 0.2; done; kill $BP 2>/dev/null; wait $BP 2>/dev/null
+check "D1: consult cap 2 — two consults, then idle" "[ \$(grep -c '=== CONSULT' $L11/lane.log) = 2 ] && has $L11/lane.log 'BUDGET cap reached (consults 2/2)' && has $L11/lane.log 'supervisor loop exiting'"
+check "D1: the breach is asked of the owner, once" "[ \$(grep -c '^## Budget' $L11/owner-questions.md) = 1 ] && has $L11/owner-questions.md 'max_consults_per_day'"
+check "D1: counters live in loop-state.json" "python3 -c \"import json; b=json.load(open('$L11/loop-state.json'))['budget']; assert b['consults']==2 and b['breached']==['consults'], b\""
+check "D2: running total in the lane log, shown by the event feed" "grep -E \"\$EVENTS\" $L11/lane.log | grep -q 'TOTAL [0-9-]*: consults 1/2' && grep -E \"\$EVENTS\" $L11/lane.log | grep -q 'BUDGET cap reached'"
+O12=$SB/org12; L12=$O12/lanes/st
+newlane "$O12" st 120 '=== AGENT name=a1 model=opus ===\nx\n=== END AGENT ===\n=== AGENT name=a2 model=opus ===\nx\n=== END AGENT ===\n=== AGENT name=a3 model=opus ===\nx\n=== END AGENT ===\n'
+setorg "$O12/org.json" '{"max_agent_starts_per_day": 2}'; setorg "$L12/lane.json" '{"max_parallel": 3}'
+( cd "$L12" && ORG_ROOT=$O12 exec python3 "$O12/supervise.py" "$L12" 1 > "$SB/st.out" 2>&1 ) & SP2=$!
+for _ in $(seq 1 150); do [ "$(grep -c 'finished rc=0' "$L12/lane.log" 2>/dev/null)" = 2 ] && break; sleep 0.2; done
+sleep 2; touch "$L12/STOP"; for _ in $(seq 1 50); do kill -0 $SP2 2>/dev/null || break; sleep 0.2; done; kill $SP2 2>/dev/null; wait $SP2 2>/dev/null
+check "D1: agent-start cap 2 — the third agent never starts; finished work is still committed" "has $L12/lane.log 'agent a1 (opus) start' && has $L12/lane.log 'agent a2 (opus) start' && ! has $L12/lane.log 'agent a3 (opus) start' && has $L12/lane.log 'BUDGET cap reached (starts 2/2)' && has $L12/lane.log 'agent a2 finished rc=0 report=present' && [ \$(grep -c '=== CONSULT' $L12/lane.log) = 1 ] && has $L12/lane.log 'supervisor loop exiting'"
+O13=$SB/org13; L13=$O13/lanes/ro
+newlane "$O13" ro 120
+printf '{"budget": {"day": "2000-01-01", "consults": 99, "starts": 99, "agent_s": 0, "tick": 0, "breached": ["consults"], "total_at": 0}}' > "$L13/loop-state.json"
+rrc2=0; (cd "$L13" && ORG_ROOT=$O13 tmo 60 python3 "$O13/supervise.py" "$L13" 1 > "$SB/ro.out" 2>&1) || rrc2=$?
+check "D1: counters reset at UTC midnight, closing total logged (rc $rrc2)" "[ $rrc2 = 0 ] && has $L13/lane.log 'TOTAL 2000-01-01 (closing): consults 99/100' && has $L13/lane.log '=== CONSULT 1' && python3 -c \"import json,datetime; b=json.load(open('$L13/loop-state.json'))['budget']; assert b['day']==datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d') and b['consults']==1, b\""
+
 # ── decision 9: prompts travel on stdin, never argv (Linux caps one argument at 128 KiB) ──
 echo "== prompts on stdin"
 O5=$SB/org5; L5=$O5/lanes/b

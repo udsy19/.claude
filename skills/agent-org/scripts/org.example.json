@@ -16,6 +16,9 @@
   "default_worker_model": "opus",
 
   "agent_timeout_s": 28800,
+  "max_consults_per_day": 100,
+  "max_agent_starts_per_day": 40,
+  "max_agent_hours_per_day": 48,
   "worker_env": { "PATH": "/srv/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" },
   "per_agent_build_dir": "CARGO_TARGET_DIR",
   "worktree_links": ["web/node_modules", "web/.env.local"],

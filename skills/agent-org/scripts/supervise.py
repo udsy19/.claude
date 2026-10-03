@@ -44,6 +44,10 @@ POLL_S = int(ORG.get("poll_interval_s", 30))
 IDLE_WAIT_S = int(ORG.get("idle_wait_s", 1200))              # nothing running: wait this long for owner answers / changes
 USAGE_WAIT_S = int(ORG.get("usage_limit_wait_s", 1800))      # supervisor hit a usage limit: wait, then consult again
 LIMIT_RE = re.compile(r"usage limit|rate limit|quota|credit balance", re.I)
+# Spend guards, per lane per UTC day. On a breach the lane asks the owner and idles until midnight UTC or STOP.
+BUDGET = {"consults": int(ORG.get("max_consults_per_day", 100)),
+          "starts": int(ORG.get("max_agent_starts_per_day", 40)),
+          "agent_hours": float(ORG.get("max_agent_hours_per_day", 48))}
 WORKER_USER = ORG.get("worker_user") or ""                 # remote runtime: the ONE user that runs the whole org
 SUP = ORG["supervisor"]                                     # {"backend": "codex"|"claude", "model": ..., ...}
 MODELS = ORG["worker_models"]                               # {"opus": "claude-opus-5-5", "sonnet": "sonnet"}
@@ -152,6 +156,68 @@ FINISHED = []          # agent names finished since the last consult (their bran
 def save_state():
     open(STATE + ".tmp", "w").write(json.dumps(ST, indent=1))
     os.replace(STATE + ".tmp", STATE)
+
+
+def today():
+    return f"{now():%Y-%m-%d}"
+
+
+def spend(running=()):
+    """Today's counters (reset at UTC midnight, logging the closing total), with running agents' time charged
+    up to now."""
+    b = ST.get("budget") or {}
+    if b.get("day") != today():
+        if b.get("day"):
+            log_total(b, closing=True)
+        b = ST["budget"] = {"day": today(), "consults": 0, "starts": 0, "agent_s": 0.0, "tick": time.time(),
+                            "breached": [], "total_at": 0.0}
+    t = time.time()
+    b["agent_s"] += (t - b.get("tick", t)) * sum(1 for x in running if x[0].poll() is None)
+    b["tick"] = t
+    return b
+
+
+def log_total(b, closing=False):
+    """D2: the running total for the day, in the lane log (lane-events.sh shows TOTAL lines)."""
+    log(f"TOTAL {b['day']}{' (closing)' if closing else ''}: consults {b['consults']}/{BUDGET['consults']}, "
+        f"agent starts {b['starts']}/{BUDGET['starts']}, agent hours {b['agent_s'] / 3600:.1f}/{BUDGET['agent_hours']:g}")
+    b["total_at"] = time.time()
+
+
+def over_budget(kind, running=()):
+    """True when today's `kind` cap ("consults" | "starts") or the agent-hours cap is reached. The first breach of
+    the day is logged and asked of the owner (owner-questions.md, like an ASK_OWNER block)."""
+    b = spend(running)
+    hit = [k for k, used in ((kind, b[kind]), ("agent_hours", b["agent_s"] / 3600)) if used >= BUDGET[k]]
+    if not hit:
+        return False
+    new = [k for k in hit if k not in b["breached"]]
+    if new:
+        b["breached"] += new
+        save_state()
+        what = ", ".join(f"{k} {b[k] if k != 'agent_hours' else round(b['agent_s'] / 3600, 1)}/{BUDGET[k]:g}" for k in new)
+        qn = (f"Budget cap reached for {b['day']} UTC ({what}). The lane is idle until 00:00 UTC. Raise the cap in "
+              f"org.json (max_consults_per_day / max_agent_starts_per_day / max_agent_hours_per_day) and restart "
+              f"the lane, or let it resume tomorrow.")
+        with open(f"{R}/owner-questions.md", "a") as f:
+            f.write(f"\n## Budget ({now():%Y-%m-%d %H:%M} UTC)\n{qn}\n")
+        log(f"BUDGET cap reached ({what}) — ASK_OWNER: {qn}")
+        log_total(b)
+    return True
+
+
+def idle_until_rollover(running):
+    """Spend guard: no consults and no agent starts until the UTC day changes or STOP. Running agents keep their
+    deadlines; the ones that finish meanwhile are committed as usual."""
+    day = today()
+    while not stopped() and today() == day:
+        done = [x for x in running if x[0].poll() is not None]
+        if done:
+            finish(done)
+            running[:] = [x for x in running if x not in done]
+        spend(running)
+        save_state()
+        time.sleep(POLL_S)
 
 
 MEMORY = f"{R}/lane-memory.md"            # the supervisor's own persistent, append-only memory (LEARN journal)
@@ -585,6 +651,9 @@ def main():
     rnd = START_ROUND
     running, pending, candidates = adopt_running(), [], []
     while not stopped():
+        if over_budget("consults", running):
+            idle_until_rollover(running)
+            continue
         reports = sorted(glob.glob(f"{R}/reports/*.md"), key=report_key)
         newest = reports[-6:]
         sh(f"cd {q(INT)} && git checkout -q {q(INT_BR)} 2>/dev/null; git reset -q --hard {q(INT_BR)}")
@@ -610,6 +679,11 @@ def main():
         imgs = images(ST["last_consult"])
         ST["last_consult"] = time.time()
         FINISHED.clear()
+        save_state()
+        b = spend(running)
+        b["consults"] += 1
+        if time.time() - b.get("total_at", 0) >= 3600:
+            log_total(b)
         save_state()
         log(f"=== CONSULT {rnd}: supervisor planning ({len(reports)} reports, {len(imgs)} images, {len(prompt)} chars)")
         out = consult(prompt, f"{R}/rounds/{rnd:04d}-supervisor.md", INT, imgs)
@@ -680,10 +754,17 @@ def main():
             pending.append((n, mdl if mdl in MODELS else DEFAULT_MODEL, base or INT_BR, b))
         while not stopped():   # rolling dispatch
             while pending and len([x for x in running if x[0].poll() is None]) < MAX_PAR:
+                if over_budget("starts", running):
+                    break
                 n, mdl, base, b = pending.pop(0)
                 st = run_agent(n if not os.path.isdir(f"{R}/wt/{n}") else f"{n}-c{rnd}", mdl, base, b, rnd)
                 if st:
                     running.append(st)
+                    spend(running)["starts"] += 1
+                    save_state()
+            if pending and over_budget("starts", running) and not any(x[0].poll() is None for x in running):
+                idle_until_rollover(running)
+                break
             done = [x for x in running if x[0].poll() is not None]
             if done:
                 finish(done)
@@ -697,6 +778,8 @@ def main():
                     time.sleep(POLL_S)
                 break
             watch_reports(running)
+            spend(running)
+            save_state()
             time.sleep(POLL_S)
         rnd += 1
     if stopped():

@@ -7,7 +7,7 @@ j() { python3 -c "import json,sys;d=json.load(open(sys.argv[2]));print(eval(sys.
 CL=$(j 'd.get("claude_bin","claude")'); PI=$(j 'd.get("auth_probe_interval_s",1800)')
 PM=$(j 'd["worker_models"][d.get("default_worker_model") or next(iter(d["worker_models"]))]')
 # What counts as an event (scripts/test-supervise.sh reads this line). Log lines start "YYYY-MM-DD HH:MM" or "HH:MM".
-EVENTS=" start on |finished|ASK_OWNER|MERGE|LAND|DONE|FAILED|exiting|DIVERGED|refused|REFUSED|usage limit|restarted|KILL|NO ACTIONABLE BLOCK|REPORT OVERDUE|UNFILLED|SUPERVISOR ERROR"
+EVENTS=" start on |finished|ASK_OWNER|MERGE|LAND|DONE|FAILED|exiting|DIVERGED|refused|REFUSED|usage limit|restarted|KILL|NO ACTIONABLE BLOCK|REPORT OVERDUE|UNFILLED|SUPERVISOR ERROR|BUDGET|TOTAL "
 S=$ORG_ROOT/logs/lane-events.state; mkdir -p "$ORG_ROOT/logs"
 # timed in python (as bootstrap-host.sh does): stock macOS has no GNU timeout
 to() { python3 -c 'import subprocess,sys
