@@ -199,8 +199,8 @@ def _sh(args, timeout=30):
 
 w("## The laws — binding, and NOT vault notes")
 w("")
-w("`.claude/rules/*.md` is auto-loaded into every agent, so it is the one place prior art is "
-  "read without being looked for. Its worked cases live in "
+w("`.claude/rules/*.md` is auto-loaded (gate-independence when a gate, hook, test or evidence file is "
+  "touched), so it is the one place prior art is read without being looked for. Its worked cases live in "
   "[[Design/gate-independence-cases]].")
 w("")
 rules_dir = os.path.join(ROOT, ".claude", "rules")

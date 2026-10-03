@@ -17,6 +17,8 @@ Active throughout implementation, automatically:
 - **When working on two or more features/ideations at once** → use a worktree per stream.
 - **When the work is a distinct product direction or a large/risky feature** → branch (ask first).
 
+**Precedence:** if the repo defines its own branch/commit policy (`.claude/rules/`, `vault/AGENTS.md` — e.g. an agent-org project), that policy wins over this skill, including its commit trailers. On a branch you were assigned (an agent-org worker branch), checkpoint commits are fine and no confirmation is needed — the branch was the decision.
+
 ## Process
 
 ### 1. Commit continuously

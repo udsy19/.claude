@@ -43,9 +43,19 @@ WORKER_USER = ORG.get("worker_user")                       # None/"" = run worke
 SUP = ORG["supervisor"]                                     # {"backend": "codex"|"claude", "model": ..., ...}
 MODELS = ORG["worker_models"]                               # {"opus": "claude-opus-5-5", "sonnet": "sonnet"}
 DEFAULT_MODEL = ORG.get("default_worker_model", next(iter(MODELS)))
-WORKER_ENV = ORG.get("worker_env", {})                      # extra env for every worker (PATH, build profile, …)
+WORKER_ENV = dict(ORG.get("worker_env", {}))                # extra env for every worker (PATH, build profile, …)
+_bq = ORG.get("build_queue") or {}
+if _bq.get("wrap"):                                         # read by build-queue (installed by bootstrap-host.sh)
+    WORKER_ENV.setdefault("BUILD_QUEUE_SLOTS", str(_bq.get("slots", 3)))
+    WORKER_ENV.setdefault("BUILD_QUEUE_HEAVY", " ".join(dict.fromkeys(w.split()[1] for w in _bq["wrap"] if len(w.split()) > 1)))
 COMMIT_ENV = ORG.get("commit_env", {})                      # env needed by the repo's commit hooks, if any
+# Every org process: the global config's interactive hooks (standing procedure, skill router, session notes) stand down.
+HEADLESS_ENV = {"AGENT_ORG_HEADLESS": "1"}
 CLAUDE = ORG.get("claude_bin", "claude")
+if not os.path.isabs(CLAUDE):                               # workers run with worker_env.PATH, which may not find a bare name
+    CLAUDE = __import__("shutil").which(CLAUDE, path=WORKER_ENV.get("PATH") or os.environ.get("PATH")) or CLAUDE
+if not (os.path.isfile(CLAUDE) and os.access(CLAUDE, os.X_OK)):
+    sys.exit(f"supervise.py: claude_bin {CLAUDE!r} not found or not executable (set an absolute path in org.json)")
 q = shlex.quote
 
 # Prompt budget: what one consult may carry.
@@ -53,7 +63,8 @@ OWNER_ANSWERS_RECENT = int(ORG.get("owner_answers_recent", 10))   # raw `## …`
 REPORT_HEAD, REPORT_TAIL, TLDR_MAX = 2000, 3000, 2000              # chars per report: TL;DR + head + tail
 CODE_VIEW_MAX = 6000                                               # chars of git log / diff --stat per consult
 IMAGE_MAX = 12                                                     # pinned (renders/owner, renders/latest) + fresh
-ACTION_RE = re.compile(r"^=== (PLAN|AGENT|MERGE|LAND|ASK_OWNER|LEARN|DONE|KILL)\b", re.M)
+ACTION_RE = re.compile(r"^=== (PLAN|AGENT|MERGE|LAND|ASK_OWNER|LEARN|MEMORY_CONSOLIDATED|DONE|KILL)\b", re.M)
+UNFILLED_RE = re.compile(r"\{\{[A-Z][A-Z0-9_]*\}\}")
 HUB_RE = re.compile(r"^vault/(.+/)?(README|Map)\.md$")            # files scripts/vault-hubs.mjs generates
 
 
@@ -93,7 +104,7 @@ def as_worker(cmd):
 
 def env_str(extra):
     env = dict(WORKER_ENV)
-    env.update({"BASH_DEFAULT_TIMEOUT_MS": "3600000", "BASH_MAX_TIMEOUT_MS": "3600000"})
+    env.update({"BASH_DEFAULT_TIMEOUT_MS": "3600000", "BASH_MAX_TIMEOUT_MS": "3600000", **HEADLESS_ENV})
     env.update(extra)
     return " ".join(f"{k}={q(str(v))}" for k, v in env.items())
 
@@ -193,11 +204,13 @@ def consult(prompt, out, cwd, images=()):
                 args += ["-i", img]
             p = subprocess.run(["timeout", "5400"] + args, input=prompt, text=True, capture_output=True)
         elif SUP["backend"] == "script":  # TEST-ONLY (scripts/test-supervise.sh): canned output, prompt on stdin, no model
-            p = subprocess.run(["bash", SUP["command"]], input=full, text=True, capture_output=True, cwd=cwd)
+            p = subprocess.run(["bash", SUP["command"]], input=full, text=True, capture_output=True, cwd=cwd,
+                               env={**os.environ, **HEADLESS_ENV, "ORG_ROLE": "supervisor"})
         else:  # claude as a read-only supervisor: it may read, search and research, never edit
-            cmd = (f"cd {q(cwd)} && {CLAUDE} -p {q(full)} --model {SUP['model']} "
+            cmd = (f"cd {q(cwd)} && {q(CLAUDE)} -p {q(full)} --model {q(SUP['model'])} "
                    f"--disallowedTools Edit,Write,NotebookEdit,Monitor --dangerously-skip-permissions")
-            p = subprocess.run(["timeout", "5400", "bash", "-c", as_worker(f"env {env_str({})} bash -c {q(cmd)}")],
+            p = subprocess.run(["timeout", "5400", "bash", "-c",
+                                as_worker(f"env {env_str({'ORG_ROLE': 'supervisor'})} bash -c {q(cmd)}")],
                                text=True, capture_output=True)
         text = p.stdout
         open(out, "w").write(text)
@@ -215,22 +228,22 @@ def consult(prompt, out, cwd, images=()):
 # ── workers ──────────────────────────────────────────────────────────────────────────────────────────
 def claude_cmd(model, prompt_file, cwd, env_extra, cont=False):
     c = "--continue " if cont else ""
-    inner = (f"cd {q(cwd)} && env {env_str(env_extra)} {CLAUDE} -p {c}\"$(cat {prompt_file})\" "
-             f"--dangerously-skip-permissions --model {MODELS[model]} --disallowedTools Monitor")
+    inner = (f"cd {q(cwd)} && env {env_str(env_extra)} {q(CLAUDE)} -p {c}\"$(cat {q(prompt_file)})\" "
+             f"--dangerously-skip-permissions --model {q(MODELS[model])} --disallowedTools Monitor")
     return as_worker(f"bash -c {q(inner)}")
 
 
 def worktree(name, base):
     wt = f"{R}/wt/{name}"
     if not os.path.isdir(wt):
-        r = sh(f"cd {REPO} && git worktree add -B {PREFIX}/{name} {wt} {q(base)}")
+        r = sh(f"cd {q(REPO)} && git worktree add -B {q(f'{PREFIX}/{name}')} {q(wt)} {q(base)}")
         if r.returncode:
             log(f"worktree {name} from {base} FAILED: {r.stderr.strip()[:300]}")
             return None
         for src in ORG.get("worktree_links", []):          # e.g. node_modules, .env files (copied, never committed)
-            sh(f"ln -sfn {REPO}/{src} {wt}/{src} 2>/dev/null")
+            sh(f"ln -sfn {q(f'{REPO}/{src}')} {q(f'{wt}/{src}')} 2>/dev/null")
         if WORKER_USER:
-            sh(f"chown -R {WORKER_USER}:{WORKER_USER} {wt} {REPO}/.git 2>/dev/null")
+            sh(f"chown -R {WORKER_USER}:{WORKER_USER} {q(wt)} {q(REPO + '/.git')} 2>/dev/null")
     return wt
 
 
@@ -242,7 +255,7 @@ def run_agent(name, model, base, brief, rnd):
     renders = f"{R}/renders/{name}"
     os.makedirs(renders, exist_ok=True)
     pf = f"{R}/prompts/{rnd:04d}-{name}.md"
-    open(pf, "w").write(open(f"{R}/agent-rules.md").read()
+    open(pf, "w").write(open(f"{R}/agent-rules.md").read() + "\n\n" + rd(f"{R}/context.md")
                         + f"\n\n# YOUR BRIEF (supervisor, consult {rnd})\n\nYou are agent `{name}` in worktree `{wt}` "
                         f"on branch `{PREFIX}/{name}`.\n\n{brief}\n\n**Write your report to `{report}`, opening with "
                         f"`## TL;DR` (at most 10 lines).** Images the supervisor should see go in `{renders}/` (PNG; "
@@ -251,17 +264,18 @@ def run_agent(name, model, base, brief, rnd):
     open(rf, "w").write("You were interrupted — your process exits whenever you end your turn. Continue your brief "
                         f"from where you stopped, running every command in the FOREGROUND. Do not stop until {report} "
                         "is written.")
-    env = {"AGENT_NAME": name, "LANE_ROOT": R, "RENDERS_DIR": renders}
+    env = {"AGENT_NAME": name, "LANE_ROOT": R, "RENDERS_DIR": renders, "ORG_LANE": LANE["name"]}
     if ORG.get("per_agent_build_dir"):
         env[ORG["per_agent_build_dir"]] = f"{R}/target/{name}"
         os.makedirs(env[ORG["per_agent_build_dir"]], exist_ok=True)
     for d in ("reports", "prompts", "logs", "target", f"renders/{name}"):
         if WORKER_USER:
-            sh(f"chown -R {WORKER_USER}:{WORKER_USER} {R}/{d}")
+            sh(f"chown -R {WORKER_USER}:{WORKER_USER} {q(f'{R}/{d}')}")
     agent_log = f"{R}/logs/{rnd:04d}-{name}.log"
-    script = (f"cd {wt} && {claude_cmd(model, pf, wt, env)} > {agent_log} 2>&1; "
-              f"for n in 1 2 3; do [ -s {report} ] && break; "
-              f"{claude_cmd(model, rf, wt, env, cont=True)} >> {agent_log} 2>&1; done")
+    # adopt_running() parses this command line back: keep the "cd <wt> " and "[ -s <report> ]" shapes
+    script = (f"cd {q(wt)} && {claude_cmd(model, pf, wt, env)} > {q(agent_log)} 2>&1; "
+              f"for n in 1 2 3; do [ -s {q(report)} ] && break; "
+              f"{claude_cmd(model, rf, wt, env, cont=True)} >> {q(agent_log)} 2>&1; done")
     log(f"agent {name} ({model}) start on {base}")
     return subprocess.Popen(["timeout", str(AGENT_TIMEOUT), "bash", "-c", script]), report, name
 
@@ -272,8 +286,8 @@ def finish(procs):
         wt = f"{R}/wt/{name}"
         cenv = " ".join(f"{k}={q(v)}" for k, v in COMMIT_ENV.items())
         msg = q(f"{PREFIX} {name}: uncommitted agent work (safety net)")
-        sh(as_worker("bash -c " + q(f"cd {wt} && git add -A && env {cenv} git commit --no-verify -q -m {msg}")))
-        sh(as_worker("bash -c " + q(f"cd {wt} && git push -q origin HEAD:refs/heads/{PREFIX}/{name}")))
+        sh(as_worker("bash -c " + q(f"cd {q(wt)} && git add -A && env {cenv} git commit --no-verify -q -m {msg}")))
+        sh(as_worker("bash -c " + q(f"cd {q(wt)} && git push -q origin {q(f'HEAD:refs/heads/{PREFIX}/{name}')}")))
         log(f"agent {name} finished rc={p.returncode} report={'present' if os.path.exists(report) else 'MISSING'}")
         FINISHED.append(name)
         if name in ST["overdue"]:
@@ -304,15 +318,14 @@ class Adopted:
 
 def adopt_running():
     out = []
-    for pid in sh(f"pgrep -f 'timeout [0-9]+ bash -c cd {R}/wt/'").stdout.split():
-        try:
-            cmd = open(f"/proc/{pid}/cmdline").read().replace("\0", " ")
-        except OSError:
+    for pid in sh(f"pgrep -f {q(f'timeout [0-9]+ bash -c cd .?{R}/wt/')}").stdout.split():
+        cmd = sh(f"ps -ww -o args= -p {pid}").stdout.strip()      # ps, not /proc: macOS has no /proc
+        if not cmd:
             continue
-        m = re.search(rf"cd {re.escape(R)}/wt/(\S+) ", cmd)
-        rp = re.search(r"\[ -s (\S+) \]", cmd)
+        m = re.search(rf"cd '?{re.escape(R)}/wt/([^/' ]+)'? ", cmd)
+        rp = re.search(r"\[ -s ('[^']*'|\S+) \]", cmd)
         if m and cmd.startswith("timeout"):
-            out.append((Adopted(int(pid)), rp.group(1) if rp else "", m.group(1)))
+            out.append((Adopted(int(pid)), rp.group(1).strip("'") if rp else "", m.group(1)))
             log(f"adopted running agent {m.group(1)} (pid {pid})")
     return out
 
@@ -405,12 +418,19 @@ def merge(cwd, br, msg, why):
 def main():
     for d in ("reports", "prompts", "logs", "rounds", "wt", "target", "renders/owner"):
         os.makedirs(f"{R}/{d}", exist_ok=True)
+    # An empty or placeholder-filled brief would be sent to the supervisor as content: refuse instead.
+    for f in ("context.md", "supervisor-brief.md"):
+        text = rd(f"{R}/{f}")
+        left = sorted(set(UNFILLED_RE.findall(text)))
+        if not text.strip() or left:
+            log(f"UNFILLED {f}: {'empty' if not text.strip() else ' '.join(left)} — fill it, then lanes.sh start")
+            sys.exit(2)
     rnd = START_ROUND
     running, pending, candidates = adopt_running(), [], []
     while not stopped():
         reports = sorted(glob.glob(f"{R}/reports/*.md"), key=report_key)
         newest = reports[-6:]
-        sh(f"cd {INT} && git checkout -q {INT_BR} 2>/dev/null; git reset -q --hard {INT_BR}")
+        sh(f"cd {q(INT)} && git checkout -q {q(INT_BR)} 2>/dev/null; git reset -q --hard {q(INT_BR)}")
         watch_reports(running)
         branches = list(dict.fromkeys(candidates + [f"{PREFIX}/{n}" for n in FINISHED]))
         notes, ST["notes"] = ST["notes"], []
@@ -438,6 +458,9 @@ def main():
         out = consult(prompt, f"{R}/rounds/{rnd:04d}-supervisor.md", INT, imgs)
         if stopped():
             break
+        if not out.strip():                       # the supervisor process failed: say why, in the log the feed watches
+            err = " | ".join(rd(f"{R}/rounds/{rnd:04d}-supervisor.md.err").strip().splitlines()[:3])
+            log(f"SUPERVISOR ERROR in consult {rnd}: empty output; stderr: {err[:300] or '(empty)'}")
         if not ACTION_RE.search(out):
             log(f"NO ACTIONABLE BLOCK in consult {rnd} ({len(out)} chars of output)")
             ST["notes"].append(f"Your previous consult ({rnd}) produced no actionable block (first 500 chars: "
@@ -468,12 +491,12 @@ def main():
         for br in merges:
             r = merge(INT, br, f"{PREFIX}: merge {br} (consult {rnd})", f"MERGE {br} into {INT_BR} (consult {rnd})")
             if r.returncode:
-                sh(f"cd {INT} && git merge --abort")
+                sh(f"cd {q(INT)} && git merge --abort")
                 log(f"MERGE {br} CONFLICT — aborted")
                 open(f"{R}/reports/{rnd:04d}-zz-merge-{br.replace('/', '-')}.md", "w").write(
                     f"# Merge of {br} into {INT_BR} FAILED (conflict)\n\n{r.stdout[-3000:]}\n{r.stderr[-2000:]}\n")
             else:
-                sh(f"cd {INT} && git push -q origin {INT_BR}")
+                sh(f"cd {q(INT)} && git push -q origin {q(INT_BR)}")
                 log(f"MERGE {br} ok")
         for br in lands:
             if not LANE.get("may_land"):
@@ -482,7 +505,7 @@ def main():
             r = merge(REPO, br, f"{PREFIX}: land {br} on {MAIN_BR} (consult {rnd})\n\nAuthority: supervisor",
                       f"LAND {br} on {MAIN_BR} (consult {rnd})")
             if r.returncode:
-                sh(f"cd {REPO} && git merge --abort")
+                sh(f"cd {q(REPO)} && git merge --abort")
                 log(f"LAND {br} CONFLICT — aborted, main untouched")
             else:
                 log(f"LAND {br} ok ({git_out('git rev-parse --short HEAD')})")

@@ -32,7 +32,8 @@ It shows a summary for your yes, then installs the repo layer (`templates/repo/`
 its contracts and generated hubs, the six rules, the hooks, the role cards, and every enforcement gate)
 with `scripts/init-repo.mjs`, runs the org board until it is green, sets up memory and the lanes, starts
 everything, and becomes the overseer. The only things it leaves to you are the logins (`claude`, `codex`),
-which you type in your own terminal.
+which you type in your own terminal. It also asks you to start the tracking `/loop`, and to restart Claude Code once so the
+session runs with the overseer's role.
 
 ## Day to day
 | | |
@@ -40,7 +41,7 @@ which you type in your own terminal.
 | see what's running | `lanes.sh <ORG_ROOT> status` |
 | add a lane | `lanes.sh <ORG_ROOT> new <name> "<goal>" <parallel> <may_land>` then `start <name>` |
 | restart a lane safely (workers keep running) | `lanes.sh <ORG_ROOT> restart <name>` |
-| stop a lane | `lanes.sh <ORG_ROOT> stop <name>` |
+| stop a lane (`start` resumes it) | `lanes.sh <ORG_ROOT> stop <name>` |
 | answer a lane's question | the overseer appends your words to `lanes/<name>/owner-answers.md` and updates `rulings.md` |
 | free disk (also hourly from cron) | `lanes.sh <ORG_ROOT> gc [name…]` |
 | is each lane getting better? | `python3 <ORG_ROOT>/lane-metrics.py <ORG_ROOT> --days 7` |

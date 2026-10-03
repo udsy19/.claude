@@ -123,17 +123,31 @@ for (const rel of walk(SRC)) {
   if (dest === '.claude/settings.json') {
     let have, want
     try { have = JSON.parse(fs.readFileSync(to, 'utf8')); want = JSON.parse(body.toString()) }
-    catch (e) { kept.push(`${dest} (NOT merged: ${e.message} — merge the hooks by hand)`); continue }
+    catch (e) {
+      // Without these hooks the contract, loop guard and dispatch log are silently absent, and the
+      // board does not test hooks, so it would still go green. Fail the install instead.
+      console.error(`init-repo: ${dest} could not be parsed (${e.message}); its hooks and env were NOT merged. ` +
+        `Make it plain JSON (no comments) and re-run, or merge them by hand from ${path.join(SRC, rel)}.`)
+      process.exitCode = 1
+      kept.push(`${dest} (NOT merged)`)
+      continue
+    }
     let n = 0
     have.env ??= {}
-    for (const [k, v] of Object.entries(want.env ?? {})) if (!(k in have.env)) { have.env[k] = v; n++ }
+    for (const [k, v] of Object.entries(want.env ?? {})) {
+      if (!(k in have.env)) { have.env[k] = v; n++ }
+      else if (have.env[k] !== v) console.warn(`init-repo: WARNING ${dest} keeps env ${k}=${JSON.stringify(have.env[k])}; the vars file says ${JSON.stringify(v)}. The gates read the settings value — change one so they agree.`)
+    }
     have.hooks ??= {}
+    // A hook counts as present when it targets the same project file, so a re-run after the kit
+    // rewords a command does not install a second copy of it.
+    const target = (c) => (String(c).match(/\$\{?CLAUDE_PROJECT_DIR\}?\/([^"'\s]+)/) || [])[1] || c
     for (const [ev, entries] of Object.entries(want.hooks ?? {})) {
       have.hooks[ev] ??= []
-      const cmds = new Set(have.hooks[ev].flatMap((e) => (e.hooks ?? []).map((h) => h.command)))
+      const cmds = new Set(have.hooks[ev].flatMap((e) => (e.hooks ?? []).map((h) => target(h.command))))
       for (const e of entries) {
         // never merge a hook whose command still carries an unfilled placeholder
-        const missing = (e.hooks ?? []).filter((h) => !cmds.has(h.command) && !HAS_PH.test(h.command))
+        const missing = (e.hooks ?? []).filter((h) => !cmds.has(target(h.command)) && !HAS_PH.test(h.command))
         if (missing.length) { have.hooks[ev].push({ ...e, hooks: missing }); n += missing.length }
       }
     }
@@ -187,4 +201,5 @@ if (unfilled.size) {
   console.log('  Fill them (re-run with --set KEY=VALUE only fills files this run WROTE; edit the rest by hand).')
   if (!allowUnfilled) process.exit(1)
 }
-console.log('init-repo: done. Next: commit on a branch (Authority: owner — the owner said yes to the set-up), then `bash scripts/gates/org-board.sh`.')
+if (process.exitCode) console.log('init-repo: finished WITH ERRORS (above). Fix them before committing.')
+else console.log('init-repo: done. Next: commit on a branch (Authority: owner — the owner said yes to the set-up, plus an EVIDENCE-GROWTH paragraph), then `bash scripts/gates/org-board.sh` must exit 0.')

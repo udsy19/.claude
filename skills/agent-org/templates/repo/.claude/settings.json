@@ -11,7 +11,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cat \"$CLAUDE_PROJECT_DIR/vault/AGENTS.md\" 2>/dev/null || true"
+            "command": "[ \"${ORG_ROLE:-}\" = supervisor ] || cat \"$CLAUDE_PROJECT_DIR/vault/AGENTS.md\" 2>/dev/null || true"
           },
           {
             "type": "command",

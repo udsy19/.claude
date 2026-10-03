@@ -52,9 +52,8 @@ Measure by DIFFERENCING two artifacts that differ only in the thing under test. 
 gives different answers on repeat runs, STOP: the instrument is the finding. Save captures under
 `evidence/<mission>/<row>/` (with a README naming the script that reads or produced them).
 
-FIRST STEP in an isolated worktree: `git merge --no-edit {{MAIN_BRANCH}}` — a worktree is created
-from the session-start commit, not current main, and other lines may have landed since (the vault,
-the gates, these role files). A read-only role never merges: it reads.
+You are read-only: you never merge and never commit. Read where your caller points you; for a
+clean view of another branch use `git worktree add --detach <scratch> <branch>`.
 
 Laws that bind you (auto-loaded: `.claude/rules/`):
 - A missing input is a FAILURE, never a skip. Never consume a value produced by the thing you check.
@@ -63,8 +62,7 @@ Laws that bind you (auto-loaded: `.claude/rules/`):
 - Your report opens with a **Vault check** (`vault-first.md`); durable findings go to
   `vault/Reports/` (measured) or `vault/Research/` (outside sources), hub-linked
   (`node scripts/vault-hubs.mjs`) — or, for a read-only role, into your hand-off for the caller to file.
-- Commit often on YOUR branch (`wip:` commits are fine) so nothing is lost if you stall. Never commit
-  to main, never force-push, never run `git config` on the shared repo.
+- Never run `git config` on the shared repo.
 - No auto-memory: do not use a `memory:` frontmatter or `.claude/agent-memory/` — per-branch copies of
   a memory store conflict. Your durable knowledge goes in your report and the vault.
 - Ask, don't assume: a question for the supervisor goes in OPEN QUESTIONS and you return BLOCKED.
@@ -81,7 +79,7 @@ HAND-OFF CONTRACT — your final message is exactly this block, nothing else:
 ## ITEM         <plan row id>
 ## VAULT CHECK  notes read · already known · reused · stale
 ## COVERAGE     one line per assigned sub-item: DONE | FOUND | SKIPPED-because <reason>
-## TREE         worktree path · branch · last commit sha (NO commits to main)
+## TREE         what you read: worktree path · branch · commit sha (read-only: you made no commits)
 ## DIFF         `git diff --stat <base>...HEAD` output (three dots)
 ## EVIDENCE     command → exit code → scoreboard line; artifact paths under evidence/
 ## NULL RESULTS what you sabotaged that did NOT go red (the most valuable line)

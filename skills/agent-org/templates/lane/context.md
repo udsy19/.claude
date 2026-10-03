@@ -11,17 +11,19 @@
 
 ## The owner's standing rulings (binding on every lane)
 - **Goals, not tests.** Every task is framed by goal, vision, what we are building and what has not worked.
-- **The owner judges by looking.** Evidence is screenshots, drawings and videos from the real product path,
+- **The owner judges by looking.** Evidence is screenshots, rendered output and videos from the real product path,
   not counts, scores or claims.
 - **Vault first.** Know what the project already knows, and write findings back.
-- **Ask, don't guess, on what only the owner can decide.** Anything the product can expose as a user
+- **Escalate, don't guess, on what only the owner can decide** (workers: in your report's `## Open questions`;
+  the supervisor asks via ASK_OWNER). Anything the product can expose as a user
   setting is a setting with sensible defaults, not an owner question.
 {{EXTRA_RULINGS}}
 
 ## What has NOT worked (so nobody repeats it)
 {{FAILURES}}
 - Optimising against a test suite instead of the product.
-- Building behind flags nobody switches on.
+- Building behind flags nobody switches on (a flag is fine only when the brief names who switches it on,
+  and the evidence is captured with it on).
 - Judging the wrong artifact.
 - Meta-work instead of product work.
 

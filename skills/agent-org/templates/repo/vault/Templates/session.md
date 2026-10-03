@@ -23,7 +23,7 @@ Notes read (paths), what was already known, what was reused, what is wrong or st
 
 ## Decisions taken / proposed
 - Taken (inside my mandate): …
-- Proposed for the owner: … → [[Decisions/D-XXXX-...]] (status: proposed) or `scripts/propose.mjs` #n
+- Proposed for the owner: … → `Decisions/NNNN-<slug>.md` (status: proposed; link it once it exists) or `scripts/propose.mjs` #n
 
 ## Open questions for the owner
 - …

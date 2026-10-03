@@ -13,9 +13,9 @@
 
 set -euo pipefail
 
-if ! command -v jq >/dev/null 2>&1; then
-  printf '%s\n' "error: missing jq" >&2; exit 1
-fi
+# Missing dependencies → silent no-op (hooks fail safe; a non-zero exit shows a hook error on every call).
+command -v jq >/dev/null 2>&1 || exit 0
+{ command -v shasum || command -v sha1sum; } >/dev/null 2>&1 || exit 0
 
 CACHE="${CLAUDE_PROJECT_DIR:-.}/.claude/.simplify-ignore-cache"
 if [ -t 0 ]; then INPUT="{}"; else INPUT=$(cat); fi

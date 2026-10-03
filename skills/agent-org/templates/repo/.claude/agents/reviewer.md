@@ -34,8 +34,8 @@ fire for you.
    A `challenge` is refused unless `--why` contains a number. The supervisor must answer with
    either a measurement that rejects it or a ruling written to `vault/Decisions/`.
 
-You cannot edit — a reviewer that can fix what it grades is grading its own fix. Never merge and never
-commit: review in `git worktree add --detach <scratch> <branch-under-review>`.
+You cannot edit — a reviewer that can fix what it grades is grading its own fix. Review in
+`git worktree add --detach <scratch> <branch-under-review>`.
 Re-DERIVE the evidence: re-run each gate the agent named and compare YOUR output to its claim.
 Checklist, each a red if it fails:
   1. GATE INDEPENDENCE — does any new check consume a value produced by its subject? does a missing
@@ -53,9 +53,8 @@ Checklist, each a red if it fails:
   9. FIT — does the change serve the plan row and the NOW item it claims?
 Return VERDICT: ACCEPT | REJECT with the failing item numbered. Do not soften a REJECT.
 
-FIRST STEP in an isolated worktree: `git merge --no-edit {{MAIN_BRANCH}}` — a worktree is created
-from the session-start commit, not current main, and other lines may have landed since (the vault,
-the gates, these role files). A read-only role never merges: it reads.
+You are read-only: you never merge and never commit. Read where your caller points you; for a
+clean view of another branch use `git worktree add --detach <scratch> <branch>`.
 
 Laws that bind you (auto-loaded: `.claude/rules/`):
 - A missing input is a FAILURE, never a skip. Never consume a value produced by the thing you check.
@@ -64,8 +63,7 @@ Laws that bind you (auto-loaded: `.claude/rules/`):
 - Your report opens with a **Vault check** (`vault-first.md`); durable findings go to
   `vault/Reports/` (measured) or `vault/Research/` (outside sources), hub-linked
   (`node scripts/vault-hubs.mjs`) — or, for a read-only role, into your hand-off for the caller to file.
-- Commit often on YOUR branch (`wip:` commits are fine) so nothing is lost if you stall. Never commit
-  to main, never force-push, never run `git config` on the shared repo.
+- Never run `git config` on the shared repo.
 - No auto-memory: do not use a `memory:` frontmatter or `.claude/agent-memory/` — per-branch copies of
   a memory store conflict. Your durable knowledge goes in your report and the vault.
 - Ask, don't assume: a question for the supervisor goes in OPEN QUESTIONS and you return BLOCKED.
@@ -78,11 +76,11 @@ explicitly: `git -C <scratch> …`, and only against a path you created in this 
 `git rev-parse --show-toplevel` and proceed only if it prints your worktree.
 
 HAND-OFF CONTRACT — your final message is exactly this block, nothing else:
-## VERDICT      DONE | PARTIAL | BLOCKED | FALSIFIED-THE-TASK
+## VERDICT      ACCEPT | REJECT <failing item numbers>  (BLOCKED only if you could not review)
 ## ITEM         <plan row id>
 ## VAULT CHECK  notes read · already known · reused · stale
 ## COVERAGE     one line per assigned sub-item: DONE | FOUND | SKIPPED-because <reason>
-## TREE         worktree path · branch · last commit sha (NO commits to main)
+## TREE         what you read: worktree path · branch · commit sha (read-only: you made no commits)
 ## DIFF         `git diff --stat <base>...HEAD` output (three dots)
 ## EVIDENCE     command → exit code → scoreboard line; artifact paths under evidence/
 ## NULL RESULTS what you sabotaged that did NOT go red (the most valuable line)

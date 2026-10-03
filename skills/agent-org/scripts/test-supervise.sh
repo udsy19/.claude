@@ -27,6 +27,7 @@ git init -q -b main "$REPO" && cd "$REPO" || exit 2
 mkdir -p vault/Reports scripts/lib
 cp "$KIT/templates/repo/scripts/vault-hubs.mjs" scripts/; cp "$KIT/templates/repo/scripts/lib/argv.mjs" scripts/lib/
 printf '# Home\n\nStart here. [[Map]]\n' > vault/Home.md
+printf '# Agents\n\nThe contract.\n' > vault/AGENTS.md      # lanes.sh new refuses a main without it
 printf '# First report\n\nMeasured something.\n' > vault/Reports/first.md
 node scripts/vault-hubs.mjs >/dev/null || { echo "vault-hubs failed in the sandbox"; exit 2; }
 git add -A && git commit -qm "init" && git remote add origin "$SB/origin.git" && git push -q origin main
@@ -42,6 +43,7 @@ case "$AGENT_NAME" in
   alpha) sleep 2;;
   beta) sleep 8;;
 esac
+echo "lane=$ORG_LANE headless=$AGENT_ORG_HEADLESS role=$ORG_ROLE" > "$LANE_ROOT/env-$AGENT_NAME.seen"
 echo "$AGENT_NAME" > "work-$AGENT_NAME.txt"
 [ "$AGENT_NAME" = alpha ] && printf '# Alpha finding\n\nAlpha measured a thing.\n' > vault/Reports/alpha-finding.md
 git add -A && git commit -qm "$AGENT_NAME work"
@@ -77,6 +79,10 @@ cat > "$ORG/org.json" <<EOF
 EOF
 bash "$KIT/scripts/lanes.sh" "$ORG" new t "sandbox goal" 2 true >/dev/null || { echo "lanes.sh new failed"; exit 2; }
 check "lanes.sh new creates rulings.md and renders/owner" "[ -f $L/rulings.md ] && [ -d $L/renders/owner ]"
+fill() { python3 -c "import re,sys
+for p in sys.argv[1:]:
+    t = re.sub(r'\{\{[A-Z][A-Z0-9_]*\}\}', 'filled', open(p).read()); open(p, 'w').write(t)" "$@"; }
+fill "$L/context.md" "$L/supervisor-brief.md"     # the overseer fills these; supervise.py refuses UNFILLED ones
 echo "- RULING-KEEP-7: the owner's current law" >> "$L/rulings.md"
 for i in $(seq -w 1 15); do printf '\n## 2026-10-%s · question A%s\nanswer-A%s\n' "$i" "$i" "$i" >> "$L/owner-answers.md"; done
 printf 'PNG-owner' > "$L/renders/owner/ref-owner.png"
@@ -169,6 +175,62 @@ check "metrics: consults/dispatches/finished" "[ $(m t consults) = 5 ] && [ $(m 
 check "metrics: merges/lands/kills/no-action/missing" "[ $(m t merges_ok) = 1 ] && [ $(m t lands) = 1 ] && [ $(m t kills) = 1 ] && [ $(m t no_action) = 1 ] && [ $(m t report_missing) = 1 ]"
 check "metrics: legacy HH:MM lines dated across midnight" \
   "printf '%s' \"\$json\" | python3 -c \"import json,sys; o=json.load(sys.stdin)['old']; assert o['2026-10-01']['dispatches']==1 and o['2026-10-02']['rc_timeouts']==1 and o['2026-10-02']['med_finish_min']==15 and o['2026-10-02']['med_merge_min']==25\""
+
+# ── lane-events.sh: offsets without bash-4 arrays (macOS /bin/bash is 3.2) ──
+echo "== lane-events.sh under /bin/bash ($(/bin/bash -c 'echo $BASH_VERSION'))"
+mkdir -p "$ORG/logs"; printf '%s 0\n' "$L/lane.log" > "$ORG/logs/lane-events.state"
+evout=$(timeout 6 /bin/bash "$KIT/scripts/lane-events.sh" "$ORG" 2>&1)
+check "feed replays from the saved offset" "echo \"\$evout\" | grep -q 't: .*KILLED slowpoke' && ! echo \"\$evout\" | grep -q 'invalid option'"
+check "offset saved as the file's line count" "grep -qF \"$L/lane.log \$(wc -l < $L/lane.log | tr -d ' ')\" $ORG/logs/lane-events.state"
+
+# ── lanes.sh: refusal, literal goals, refill, STOP, and supervise.py's UNFILLED refusal ──
+echo "== lanes.sh new / start guards"
+ORG2=$SB/org2; mkdir -p "$ORG2/fakebin"; cp "$ORG/org.json" "$ORG/supervise.py" "$ORG2/"
+git -C "$REPO" branch noagents "$(git -C "$REPO" commit-tree "$(git -C "$REPO" hash-object -t tree /dev/null)" -m empty)"
+python3 -c "import json,sys; d=json.load(open(sys.argv[1])); d['main_branch']='noagents'; json.dump(d,open(sys.argv[2],'w'))" "$ORG/org.json" "$SB/org-noagents.json"
+mkdir -p "$SB/orgr" && cp "$SB/org-noagents.json" "$SB/orgr/org.json"
+rout=$(bash "$KIT/scripts/lanes.sh" "$SB/orgr" new x "goal" 2>&1); rrc=$?
+check "new refuses when main has no vault/AGENTS.md (rc $rrc)" "[ $rrc = 2 ] && echo \"\$rout\" | grep -q 'merge the agent-org set-up commit' && [ ! -d $SB/orgr/lanes/x ]"
+G='Fast & simple | a/b \1'
+bash "$KIT/scripts/lanes.sh" "$ORG2" new g "$G" 1 false >/dev/null 2>&1
+check "a goal with & | / \\ lands literally" "grep -qF -- 'Fast & simple | a/b \1' $ORG2/lanes/g/supervisor-brief.md"
+: > "$ORG2/lanes/g/context.md"; echo "- MARK-KEEP" >> "$ORG2/lanes/g/rulings.md"
+bash "$KIT/scripts/lanes.sh" "$ORG2" new g "$G" 1 false >/dev/null 2>&1
+check "re-run refills an empty file, keeps a filled one" "[ -s $ORG2/lanes/g/context.md ] && has $ORG2/lanes/g/rulings.md MARK-KEEP"
+urc=0; (cd "$ORG2/lanes/g" && ORG_ROOT=$ORG2 timeout 30 python3 "$ORG2/supervise.py" "$ORG2/lanes/g" 1 >/dev/null 2>&1) || urc=$?
+check "supervise.py refuses an UNFILLED lane (rc $urc)" "[ $urc = 2 ] && grep -q 'UNFILLED context.md: .*{{VISION_PARAGRAPH}}' $ORG2/lanes/g/lane.log && ! grep -q 'CONSULT' $ORG2/lanes/g/lane.log"
+printf '#!/usr/bin/env bash\necho "$*" >> %q\n[ "$1" = has-session ] && exit 1; exit 0\n' "$SB/tmux.args" > "$ORG2/fakebin/tmux"; chmod +x "$ORG2/fakebin/tmux"
+touch "$ORG2/lanes/g/STOP"
+PATH="$ORG2/fakebin:$PATH" bash "$KIT/scripts/lanes.sh" "$ORG2" start g >/dev/null 2>&1
+check "start clears STOP and launches the loop" "[ ! -e $ORG2/lanes/g/STOP ] && grep -q 'new-session -d -s lane-g' $SB/tmux.args"
+
+# ── a repo and an org whose paths contain a space ──
+echo "== paths with a space"
+SP="$SB/sp ace"; mkdir -p "$SP"
+git init -q --bare "$SP/origin.git"; git init -q -b main "$SP/repo"
+( cd "$SP/repo" && mkdir -p vault/Reports && printf '# Agents\n' > vault/AGENTS.md && git add -A && git commit -qm init \
+  && git remote add origin "$SP/origin.git" && git push -q origin main )
+cat > "$SP/sup.sh" <<EOF
+#!/usr/bin/env bash
+n=\$(( \$(cat "$SP/count" 2>/dev/null || echo 0) + 1 )); echo \$n > "$SP/count"; cat >/dev/null
+echo "role=\$ORG_ROLE headless=\$AGENT_ORG_HEADLESS" > "$SP/sup.env"
+case \$n in
+  1) printf '=== AGENT name=alpha model=opus ===\ndo alpha\n=== END AGENT ===\n';;
+  2) printf '=== MERGE branch=lane/s/alpha ===\n';;
+  *) printf '=== DONE ===\n';;
+esac
+EOF
+chmod +x "$SP/sup.sh"; mkdir -p "$SP/org"; cp "$ORG/supervise.py" "$SP/org/"
+python3 -c "import json,sys; d=json.load(open(sys.argv[1])); d['repo']=sys.argv[2]; d['supervisor']['command']=sys.argv[3]; json.dump(d,open(sys.argv[4],'w'))" \
+  "$ORG/org.json" "$SP/repo" "$SP/sup.sh" "$SP/org/org.json"
+bash "$KIT/scripts/lanes.sh" "$SP/org" new s "space goal" 1 false >/dev/null 2>&1
+fill "$SP/org/lanes/s/context.md" "$SP/org/lanes/s/supervisor-brief.md"
+src=0; (cd "$SP/org/lanes/s" && ORG_ROOT="$SP/org" timeout 120 python3 "$SP/org/supervise.py" "$SP/org/lanes/s" 1 >/dev/null 2>&1) || src=$?
+SL="$SP/org/lanes/s/lane.log"
+check "space: agent ran and reported (rc $src)" "[ $src = 0 ] && grep -q 'agent alpha finished rc=0 report=present' \"$SL\""
+check "space: MERGE ok and the work is on the lane branch" "grep -q 'MERGE lane/s/alpha ok' \"$SL\" && git -C \"$SP/repo\" show lane/s/integration:work-alpha.txt >/dev/null 2>&1"
+check "worker env: ORG_LANE, AGENT_ORG_HEADLESS, no ORG_ROLE" "grep -qx 'lane=s headless=1 role=' \"$SP/org/lanes/s/env-alpha.seen\""
+check "supervisor env: ORG_ROLE=supervisor, AGENT_ORG_HEADLESS" "grep -qx 'role=supervisor headless=1' \"$SP/sup.env\""
 
 echo "== $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

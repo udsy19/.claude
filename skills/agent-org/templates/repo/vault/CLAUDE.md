@@ -14,7 +14,8 @@ is SEARCHED, never read end to end.
 
 ## What an agent may write without being asked
 
-- **A session note** in `Sessions/YYYY-MM-DD-<slug>.md` from `Templates/session.md`: goal, what
+- **A session note** (interactive sessions; a lane worker writes its report instead) in
+  `Sessions/YYYY-MM-DD-<slug>.md` from `Templates/session.md`: goal, what
   changed (with commits and evidence paths), what was verified, what is next, open questions for
   the owner. One note per session; append to your own note, never edit another's.
 - **Status fields** (`status`, `updated`) in the frontmatter of notes outside the four protected

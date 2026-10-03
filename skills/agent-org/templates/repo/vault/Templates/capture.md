@@ -17,7 +17,7 @@ One line, in the owner's words if given.
 The flow, the interaction, the claim — with timestamps for video.
 
 ## What we take from it
-- Lands in: `<source path>` or [[Design/...]]
+- Lands in: `<source path>` or `Design/<note>` (link it once it exists)
 - Backlog item(s): …
 
 ## Verbatim extract

@@ -64,7 +64,7 @@ Decisions are law until superseded. Everything else describes; these DECIDE.
 
 ## The laws — binding, and NOT vault notes
 
-`.claude/rules/*.md` is auto-loaded into every agent, so it is the one place prior art is read without being looked for. Its worked cases live in [[Design/gate-independence-cases]].
+`.claude/rules/*.md` is auto-loaded (gate-independence when a gate, hook, test or evidence file is touched), so it is the one place prior art is read without being looked for. Its worked cases live in [[Design/gate-independence-cases]].
 
 | law | what it says |
 |---|---|
@@ -78,10 +78,10 @@ Decisions are law until superseded. Everything else describes; these DECIDE.
 | Completeness gates: derive the full expected set, never presence-match two artif | two contaminated lists agree with each other about what is missing. |
 | An agent must never perform or simulate a trusted-human event | where a store's value IS its provenance, producing its entries destroys the worth. |
 | Falsify against a disposable copy — never mutate the protected artifact | a verification procedure must not endanger the thing it verifies. |
-| A one-sided threshold can be propped up by ink the check does not attribute | a floor with no attribution and no upper bound can be cleared on borrowed signal. |
+| A one-sided threshold can be propped up by signal the check does not attribute | a floor with no attribution and no upper bound can be cleared on borrowed signal. |
 | A guard must constrain the population the assertion compares — AND exceed the ba | a guard below its own tolerance certifies arithmetic, not agreement. |
 | The tooling layer: a success message is not evidence that anything changed | a script that cannot fail loudly will report success quietly. |
-| A scalar is not geometry — settle shape disputes with tables | one number, or a prose noun, is a hypothesis; a table of descriptors is a measurement. |
+| A scalar is not a shape — settle shape disputes with tables | one number, or a prose noun, is a hypothesis; a table of descriptors is a measurement. |
 | The falsification round is the closing move — and it must include the enabling s | sabotage the assertion, the threshold AND every transform they depend on — and report the nulls. |
 | Evidence must prove it came from the build it claims | reload unconditionally, read a token you just changed out of the served build, abort on mismatch. |
 | Reporting convention: scope every negative claim | an unscoped negative aggregates into a global one. |

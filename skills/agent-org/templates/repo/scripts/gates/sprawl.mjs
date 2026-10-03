@@ -7,8 +7,8 @@
 //   node scripts/gates/sprawl.mjs --selftest            # replay the built-in cases, touch no git
 //
 // THE DEFECT THIS EXISTS FOR, measured in the project this kit came from: the repository
-// went 4,804 → 5,352 tracked files overnight, and nothing anywhere noticed, because nothing
-// anywhere counted. Agents produce evidence faster than cleanup removes it, and every one
+// grew by roughly 550 tracked files (about 11%) overnight, and nothing anywhere noticed,
+// because nothing anywhere counted. Agents produce evidence faster than cleanup removes it, and every one
 // of those landings was green on its board.
 //
 // THE PROPERTY (not a fix): *the tracked-file count may not grow unless a commit in the

@@ -81,7 +81,9 @@ cp -R claude-config/{skills,agents,commands,hooks,rules,references} ~/.claude/
 cp claude-config/settings.json ~/.claude/settings.json   # merge if you already have one
 ```
 
-> If you install globally, the hook paths in `settings.json` use `${CLAUDE_PROJECT_DIR}/.claude/...`. For a pure `~/.claude` install, change those to `$HOME/.claude/...` (or `${CLAUDE_CONFIG_DIR}/...`).
+> The same `settings.json` works in both scopes: each hook command runs the project's copy (`$CLAUDE_PROJECT_DIR/.claude/hooks/…`) if there is one, else the global one (`~/.claude/hooks/…`), and does nothing if neither exists. No path editing needed.
+>
+> The cache hooks write to `.claude/sdd-cache/` and `.claude/.simplify-ignore-cache/` inside whichever project you work in, so add those two lines to each project's `.gitignore` (agent-org projects get them automatically).
 
 </details>
 
@@ -255,7 +257,7 @@ It reuses this config rather than duplicating it: the `pre-edit-scan` and `memor
 
 ## The hooks
 
-All wired in `settings.json` and written to **fail safe** (no dependency → silent no-op; they never block your prompt).
+All wired in `settings.json` and written to **fail safe** (no dependency → silent no-op; they never block your prompt). The context hooks use Claude Code's documented output: `session-start.sh` returns `hookSpecificOutput.additionalContext`, and `skill-router.sh` prints plain text. Both stay silent in agent-org lane processes (`AGENT_ORG_HEADLESS=1`), which are headless and follow their own rules.
 
 | Hook | Event(s) | What it does |
 |---|---|---|

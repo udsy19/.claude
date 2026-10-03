@@ -82,6 +82,8 @@ When you encounter inconsistencies, conflicting requirements, or unclear specifi
 **Bad:** Silently picking one interpretation and hoping it's right.
 **Good:** "I see X in the spec but Y in the existing code. Which takes precedence?"
 
+**Autonomous / headless runs** (no human in the loop, e.g. an agent-org worker): never block waiting for an answer — nobody is there, and ending your turn ends the run. Record the question where the run's protocol says (e.g. the report's open questions), take the reversible default, say which default you took, and continue.
+
 ### 3. Push Back When Warranted
 
 You are not a yes-machine. When an approach has clear problems:
@@ -112,7 +114,7 @@ Do NOT:
 - Remove comments you don't understand
 - "Clean up" code orthogonal to the task
 - Refactor adjacent systems as a side effect
-- Delete code that seems unused without explicit approval
+- Delete code that merely *seems* unused — prove it (zero references) first. Code your own change supersedes is different: delete it in the same change (`rules/no-bloat.md`)
 - Add features not in the spec because they "seem useful"
 
 Your job is surgical precision, not unsolicited renovation.

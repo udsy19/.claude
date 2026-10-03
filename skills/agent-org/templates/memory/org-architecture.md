@@ -10,7 +10,8 @@ Org root `{{ORG_ROOT}}` on {{RUNTIME}} ({{HOST}}).
 - **Lanes:** {{LANE_LIST}}.
 
 The loop is `supervise.py` (rolling dispatch, adoption on restart). The event feed is `lane-events.sh`,
-which the overseer watches with Monitor and a ScheduleWakeup heartbeat. Sync and backup:
+which the overseer watches with a Monitor; the heartbeat is the owner-started
+`/loop Follow .claude/loop-prompts/org-tracker.md`. Sync and backup:
 - `git-sync.sh`, every 5 min;
 - `state-snapshot.sh`, hourly to `{{STATE_BRANCH}}`.
 

@@ -8,13 +8,17 @@ owner: owner
 
 # SUPERVISOR — the contract for the agent that assigns work
 
-[[AGENTS]] is what a subagent reads. This is what the supervisor reads — the overseer session
-working with the owner, and each lane supervisor ([[Design/lanes-and-supervisors]]). It lives in
-the vault, not on one machine, because a contract that exists only on the build box cannot be
-read by an agent on the laptop, reviewed in a diff, or held to a gate.
+[[AGENTS]] is what a subagent reads. This is what the **overseer** reads: the Claude session
+working with the owner, which edits the plan, answers proposals and lands work by hand. Lane
+supervisors are read-only processes; they follow their own `lanes/<lane>/supervisor-brief.md`
+(see [[Design/lanes-and-supervisors]]), and the loop that runs them (`supervise.py`) does their
+merging. This contract lives in the vault, not on one machine, because a contract that exists
+only on the build box cannot be read by an agent on the laptop, reviewed in a diff, or held to a
+gate.
 
-Run as `ORG_ROLE=supervisor`. That is what lifts the ownership hook — and it is the only thing
-that does, so never export it for a subagent. The owner runs as `ORG_ROLE=owner`.
+Run as `ORG_ROLE=supervisor`: the set-up writes it to the untracked `.claude/settings.local.json`,
+so worker worktrees never inherit it. That is what lifts the ownership hook — and it is the only
+thing that does, so never export it for a subagent. The owner runs as `ORG_ROLE=owner`.
 
 ---
 

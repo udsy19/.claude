@@ -17,7 +17,8 @@ Each tick:
 5. **Promote memory.** New LEARN entries in `lanes/*/lane-memory.md` that hold beyond the lane (tried and
    rejected, measured, decided) get one line each in `vault/Index.md`, written INSIDE the `INDEX:PROMOTED-BEGIN` …
    `INDEX:PROMOTED-END` markers (the rest of Index.md is generated and is overwritten on regeneration),
-   linked to the evidence, appended (never rewrite an earlier line). Commit to main. Workers' vault notes on unmerged branches never reach main, so this is how that knowledge
+   linked to the evidence, appended (never rewrite an earlier line). Commit it (`Authority: supervisor`); push to main only if the
+   owner allowed landings on main. Workers' vault notes on unmerged branches never reach main, so this is how that knowledge
    survives.
 6. **WEEKLY (Mondays, or the first tick of a new week), compound the memory:**
    - Promote each LEARN entry in `lanes/*/lane-memory.md` that has held for a week (a rejected approach,

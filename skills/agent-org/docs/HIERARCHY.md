@@ -1,7 +1,7 @@
 # The folder-memory hierarchy: how the organisation works, and why
 
-Distilled from running DSource (Sept–Oct 2026). Five lanes, an astra (codex) supervisor per lane, Claude Opus
-workers, a VPS. Every guard below exists because its failure actually happened.
+Distilled from running a real product organisation for weeks: five lanes, a codex supervisor per lane, Claude
+Opus workers, a VPS. Every guard below exists because its failure actually happened.
 
 ## 1. The chain of command
 
@@ -40,7 +40,8 @@ level only accepts **evidence** upward: artifacts, screenshots, paths, and plain
 
 ## 4. The rules, and what enforces them
 
-Six rules, one file each, auto-loaded from `.claude/rules/`: **gate-independence** (the 17 laws; their
+Six rules, one file each, in `.claude/rules/` (all auto-loaded except **gate-independence**, which loads
+when an agent touches a gate, hook, test or evidence file): **gate-independence** (the 17 laws; their
 cases are `vault/Design/gate-independence-cases.md`) · **no-bloat** (search before you write — Index →
 `where.mjs --branches` → `git grep` → rules; delete what you supersede) · **goals-not-tests** ·
 **vault-first** · **evidence-and-honesty** · **protected-paths** (`vault/Plan.md`, `vault/Roadmap.md`,

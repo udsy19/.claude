@@ -38,7 +38,7 @@ content-filtered); read only the files those two route you to.
 | `scripts/lib/` | one owner per shared derivation: the protected list, the landing range, commit trailers, argv refusal, git env | `scripts/lib/protected-paths.mjs` |
 | `vault/` | mission control (this vault) | [[Home]] |
 | `evidence/` | captures of record, linked by path from session notes and reports | `evidence/README.md` |
-| {{SOURCE_AREAS}} | *one row per product area: what it is, and the file to open first* | |
+{{SOURCE_AREAS}}
 
 ## Core abstractions — the most connected symbols
 

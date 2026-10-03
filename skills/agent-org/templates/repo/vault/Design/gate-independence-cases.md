@@ -105,7 +105,7 @@ Negative cases run in a scratch worktree or a temp copy, always.
 
 **This project's case:** —
 
-## A one-sided threshold can be propped up by ink the check does not attribute
+## A one-sided threshold can be propped up by signal the check does not attribute
 
 Case: a visibility floor (`signal / outline >= 0.70`) counted every mark inside a footprint as that
 item's, so an item painted over by something else still cleared the floor on borrowed signal.
@@ -135,7 +135,7 @@ Case: an index quoted law headings verbatim so a rename would be one `grep -F` a
 typed a Cyrillic look-alike letter. It rendered and reviewed perfectly, and defeated the grep it was
 written for. Census suspicious text by code point, never by eye.
 
-## A scalar is not geometry — settle shape disputes with tables
+## A scalar is not a shape — settle shape disputes with tables
 
 Three classification arguments in one cycle were each decided from one summary number, and each was
 wrong; each was corrected the moment someone printed a table of descriptors. One number, or a prose
@@ -160,7 +160,7 @@ disposable copy — and report the NULL results (the cuts that did not go red) a
 ## Evidence must prove it came from the build it claims
 
 Case: an "after" screenshot was captured by navigating to the same URL — not a reload — so the page
-ran the previous build and the diff was 0.22% of noise, reported as "the feature is not drawing".
+ran the previous build and the diff was 0.22% of noise, reported as "the feature is not rendering".
 Reload unconditionally, read a token you just changed out of the served build, abort on mismatch;
 measure by differencing two artifacts that differ only in the thing under test.
 

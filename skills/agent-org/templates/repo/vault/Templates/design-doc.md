@@ -14,7 +14,7 @@ updated: {{date}}
 In the user's words where possible. What is measured today (with the instrument).
 
 ## Reference behaviour
-What the reference products do, with sources (a capture in [[Research/captures/...]] or a URL).
+What the reference products do, with sources (a capture in `Research/captures/<name>` — link it once it exists — or a URL).
 
 ## Prior art here
 What [[Index]] and `node scripts/where.mjs <name> --branches` found already built, tried or

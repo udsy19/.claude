@@ -22,8 +22,9 @@ append-only LEARN journal (see `vault/Design/lanes-and-supervisors.md` § Persis
 Lessons that hold beyond the lane are promoted by the overseer into `vault/Index.md`.
 
 ## Rules
-- **Auto-memory is the overseer's alone.** Workers and sub-agents never use a `memory:` frontmatter or
-  `.claude/agent-memory/`: per-branch copies of a memory store conflict on merge and fork the truth.
+- **Auto-memory is the overseer's alone.** Workers and sub-agents write no memory of any kind (native
+  auto-memory, `memory:` frontmatter, `.claude/agent-memory/`): per-branch copies of a memory store
+  conflict on merge and fork the truth, and a worker's auto-memory would load into every later session.
   Their durable knowledge goes in their report and the vault.
 - **Check first:** before saving, look for an existing memory that covers it, and update that instead of
   duplicating.

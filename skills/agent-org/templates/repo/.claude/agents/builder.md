@@ -51,9 +51,11 @@ exact path, not a shortcut. Before any capture, prove its provenance: reload unc
 token you just added out of the served build, abort on mismatch. Measure by differencing two captures
 that differ only in the thing under test.
 
-FIRST STEP in an isolated worktree: `git merge --no-edit {{MAIN_BRANCH}}` — a worktree is created
-from the session-start commit, not current main, and other lines may have landed since (the vault,
-the gates, these role files). A read-only role never merges: it reads.
+FIRST STEP in your own isolated worktree: merge the base your brief names — `git merge --no-edit
+<base>`, where a lane worker's base is `lane/<lane>/integration` and anyone else's is `{{MAIN_BRANCH}}`.
+A worktree is created from the session-start commit, and other lines may have landed since (the
+vault, the gates, these role files). Skip this when you share your caller's worktree: the caller
+owns that branch.
 
 Laws that bind you (auto-loaded: `.claude/rules/`):
 - A missing input is a FAILURE, never a skip. Never consume a value produced by the thing you check.

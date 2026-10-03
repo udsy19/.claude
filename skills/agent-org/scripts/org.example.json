@@ -15,13 +15,13 @@
   "default_worker_model": "opus",
 
   "agent_timeout_s": 28800,
-  "worker_env": { "PATH": "/srv/bin:/usr/local/bin:/usr/bin:/bin" },
+  "worker_env": { "PATH": "/srv/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" },
   "per_agent_build_dir": "CARGO_TARGET_DIR",
   "worktree_links": ["web/node_modules", "web/.env.local"],
   "commit_env": {},
 
   "build_queue": { "slots": 3, "wrap": ["cargo build", "cargo test", "cargo run", "cargo check"] },
-  "sync": { "push_main": true, "branch_globs": ["lane/*"], "interval_s": 300 },
+  "sync": { "push_main": false, "branch_globs": ["lane/*"], "interval_s": 300 },
   "state_backup_branch": "backup/lane-state",
   "auth_probe_interval_s": 1800
 }

@@ -6,8 +6,9 @@
    backlog since the last session.
 3. Answer what you can from the owner's standing rulings. Relay what you can't to the owner, in plain
    words, with images.
-4. Re-arm tracking: a Monitor on `lane-events.sh`, plus a ScheduleWakeup heartbeat (`/loop` with
-   `overseer-loop-prompt.md`).
+4. Re-arm tracking: arm a Monitor on `lane-events.sh` yourself, and ask the owner to start the heartbeat
+   with `/loop Follow .claude/loop-prompts/org-tracker.md` (a session can't start `/loop` itself). If they
+   don't, say that tracking only runs while this session is open.
 
 ## During a session
 - **Owner answers:** append each to the lane's `owner-answers.md` (raw, append-only: its own
@@ -25,6 +26,8 @@
    the lane into the "Promoted lessons" block of `vault/Index.md` (between its PROMOTED markers — the
    generator carries that block verbatim; anything outside it is regenerated).
 3. Answer every open proposal (`node scripts/propose.mjs --list`) with a measurement or a decision note.
-4. `bash scripts/gates/org-board.sh`, then commit and push. The sync loop carries it to the host.
+4. `bash scripts/gates/org-board.sh` (must exit 0), then commit with `Authority: owner|supervisor` if
+   protected paths changed. Push to main only if the owner allowed it (a push to main may deploy);
+   otherwise git-sync carries the work to the host's lane branches.
 5. If the owner is leaving, say whether tracking keeps running. Never let questions go unanswered
    overnight in silence.

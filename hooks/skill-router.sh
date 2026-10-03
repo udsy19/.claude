@@ -21,6 +21,10 @@
 
 set -uo pipefail
 
+# agent-org lane processes are headless: interactive routing hints (interview, spec approval,
+# ask-before-branching) would stall them, and they follow their own rules. supervise.py sets this.
+[ -n "${AGENT_ORG_HEADLESS:-}" ] && exit 0
+
 command -v jq >/dev/null 2>&1 || exit 0
 
 if [ -t 0 ]; then INPUT="{}"; else INPUT=$(cat); fi
@@ -136,10 +140,10 @@ m '\b(remember (this|that|to)|note (this|that) for|for (next time|the future|fut
 
 # ── Organise ────────────────────────────────────────────────────────────────
 # "lane" alone is ambiguous (swim lanes, bike lanes), so a lane verb only fires when it isn't one of those.
-{ m '\b(agent.?org|agent organi[sz]ation|lanes\.sh|lane supervisors?|supervisor (and|\+|with) (workers|sub.?agents)|workers? (and|\+) sub.?agents|overseer)\b' \
+{ m '\b(agent.?org|agent organi[sz]ation|lanes\.sh (status|new|start|stop|restart|gc)|(run|use) lanes\.sh|lane supervisors?|supervisor (and|\+|with) (workers|sub.?agents)|workers? (and|\+) sub.?agents|overseer)\b' \
   || { m '\b(set ?up|start|spin up|add|restart|stop)( [a-z-]+){0,2} lanes?\b' \
        && ! m '\b(swim|bike|cycle|bus|traffic|fast|slow|turn|memory)[ -]?lanes?\b'; }; } \
-  && add 'agent-org — supervised lanes: supervisors, workers, sub-agents, vault, memory, handoffs'
+  && add 'agent-org — set up or operate supervised lanes (supervisors, workers, sub-agents, vault, memory)'
 
 [ -z "$HITS" ] && exit 0
 

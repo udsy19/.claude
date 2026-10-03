@@ -1,6 +1,6 @@
 ---
 name: session-open
-description: Open a work session the way the vault contract requires — read vault/Home.md, the newest session note and the mission being served, check the session registry for live lines, declare this session, and state the single next move before touching code. Use at the start of every Claude Code session in this repo, or when the user says "start", "pick up where we left off", or "/session-open".
+description: Open a work session the way the vault contract requires — read vault/Home.md, the newest session note and the mission being served, check the session registry for live lines, declare this session, and state the single next move before touching code. Use at the start of every interactive Claude Code session in this repo (not in a lane worker, whose report is its trail), or when the user says "start", "pick up where we left off", or "/session-open".
 ---
 
 # /session-open
@@ -11,7 +11,7 @@ description: Open a work session the way the vault contract requires — read va
    - the mission in force (`ORG_MISSION` in `.claude/settings.json`) in `vault/Missions/`
    - `vault/Reports/audits/SESSION-REGISTRY.md` — a `LIVE` declaration you did not write for the
      branch you intended to use means you take a NEW branch.
-   - `node scripts/propose.mjs --list` if you are the supervisor: every open proposal is answered
+   - `node scripts/propose.mjs --list` if you are the overseer (`ORG_ROLE=supervisor`): every open proposal is answered
      this session (`vault/SUPERVISOR.md` §4).
 2. `git status --short` and `git log -3 --oneline`. If the shared checkout is dirty with work that is
    not yours, do not touch it: work in your own worktree (`git worktree add <path> -b <branch>`).

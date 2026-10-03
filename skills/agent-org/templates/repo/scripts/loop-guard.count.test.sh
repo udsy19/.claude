@@ -5,6 +5,7 @@
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/loop-guard.sh"
 today=$(date +%Y-%m-%d)
 FAILED=0
+unset AGENT_NAME   # a lane worker running this suite must not silence every case (case K tests that path)
 CASES=0
 # $5 is the COUNT the message must report, and it is the whole point of this file.
 # Without it the suite asserted exit codes only — and counting LINES instead of dispatches
@@ -103,6 +104,13 @@ printf -- '---\nstate: paused\n---\n' > "$T/vault/Missions/test-mission.md"; rm 
 rc=0; ORG_MISSION=test-mission CLAUDE_PROJECT_DIR="$T" bash "$T/scripts/loop-guard.sh" >/dev/null 2>&1 || rc=$?
 CASES=$((CASES + 1)); v="ok"; [ "$rc" = "0" ] || { v="MISMATCH (wanted exit 0)"; FAILED=$((FAILED + 1)); }
 printf '%-52s exit=%s  %s\n' "J  state: paused -> must be SILENT" "$rc" "$v"
+printf -- '---\nstate: running\n---\n' > "$T/vault/Missions/test-mission.md"; rm -f "$T/vault/.loop-blocks"
+rc=0; AGENT_NAME=a1 ORG_MISSION=test-mission CLAUDE_PROJECT_DIR="$T" bash "$T/scripts/loop-guard.sh" >/dev/null 2>&1 || rc=$?
+CASES=$((CASES + 1)); v="ok"; [ "$rc" = "0" ] || { v="MISMATCH (wanted exit 0)"; FAILED=$((FAILED + 1)); }
+printf '%-52s exit=%s  %s\n' "K  lane worker (AGENT_NAME set) -> must be SILENT" "$rc" "$v"
+rc=0; (unset AGENT_NAME; ORG_MISSION=test-mission CLAUDE_PROJECT_DIR="$T" bash "$T/scripts/loop-guard.sh" >/dev/null 2>&1) || rc=$?
+CASES=$((CASES + 1)); v="ok"; [ "$rc" = "2" ] || { v="MISMATCH (wanted exit 2 — the control for K)"; FAILED=$((FAILED + 1)); }
+printf '%-52s exit=%s  %s\n' "L  same tree, no AGENT_NAME -> must FIRE (control)" "$rc" "$v"
 rm -rf "$T"
 
 # AN EXIT CODE, NOT A PRINTED WORD: a board reads the code, not the prose (gate-independence

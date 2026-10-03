@@ -12,8 +12,10 @@ Each **lane** has a **supervisor** ({{SUPERVISOR_DESC}}). The supervisor plans, 
 merges, and writes no code. It directs **worker agents** ({{WORKER_DESC}}), which code, build, run
 the real product, take screenshots and research, and may use their own **sub-agents**. An
 **overseer** (a Claude session working with the owner, `ORG_ROLE=supervisor`) keeps the organisation
-running: it relays the owner's answers, audits evidence, fixes infrastructure, promotes lessons into
-the vault, and writes handoffs. Who may write what is the authority matrix in [[Architecture]].
+running: it relays the owner's answers, audits evidence, fixes infrastructure, answers proposals
+(`node scripts/propose.mjs --list`), promotes lessons into the vault, and writes handoffs. Its contract
+is [[SUPERVISOR]]; a lane supervisor's is its `lanes/<lane>/supervisor-brief.md`. Who may write what is
+the authority matrix in [[Architecture]].
 
 Runtime: **{{RUNTIME}}** ({{HOST}}). Org root: `{{ORG_ROOT}}`.
 
@@ -25,7 +27,7 @@ Runtime: **{{RUNTIME}}** ({{HOST}}). Org root: `{{ORG_ROOT}}`.
 
 ## Rulings every lane carries
 
-These live in each lane's `owner-answers.md`, plus the overseer's memory.
+These live in each lane's `rulings.md` (the raw answers in `owner-answers.md`), plus the overseer's memory.
 - **Goals, not tests:** briefs give goal, vision, what we are building and what has not worked.
 - **Vault first:** reports open with a "Vault check" and write findings back.
 - **Judged by the real product:** evidence is screenshots and videos, not counts.
@@ -39,7 +41,7 @@ channel is a FILE or a tool call somebody can read afterwards.
 
 | from → to | channel | written by |
 |---|---|---|
-| supervisor → worker | the `=== AGENT ===` brief, prefixed with `agent-rules.md` and `context.md` | `supervise.py` from the consult |
+| supervisor → worker | the `=== AGENT ===` brief, prefixed with `agent-rules.md` (which sends the worker to `context.md` first) | `supervise.py` from the consult |
 | worker → supervisor | the report file `reports/<round>-<name>.md` (checkpointed; opens with `## TL;DR`), images in `renders/<agent>/`, and the worker's branch | the worker |
 | worker ↔ sub-agent | the Agent tool's prompt and its return value; findings are folded into the WORKER's report | the worker |
 | supervisor → owner | `=== ASK_OWNER ===` → `owner-questions.md` (surfaced by the event feed) | `supervise.py` |

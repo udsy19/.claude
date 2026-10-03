@@ -1,3 +1,15 @@
+---
+paths:
+  - "scripts/gates/**"
+  - "scripts/hooks/**"
+  - "scripts/lib/**"
+  - "evidence/**"
+  - "**/*.test.*"
+  - "**/*_test.*"
+  - "**/test/**"
+  - "**/tests/**"
+---
+
 # Gate Independence
 
 **A gate may not consume any value produced by the system under test. It must re-derive its ground
@@ -40,11 +52,11 @@ Every law below appears in [[Design/gate-independence-cases]] exactly once, with
 8. **Completeness gates: derive the full expected set, never presence-match two artifact-derived lists** — two contaminated lists agree with each other about what is missing.
 9. **An agent must never perform or simulate a trusted-human event** — where a store's value IS its provenance, producing its entries destroys the worth.
 10. **Falsify against a disposable copy — never mutate the protected artifact** — a verification procedure must not endanger the thing it verifies.
-11. **A one-sided threshold can be propped up by ink the check does not attribute** — a floor with no attribution and no upper bound can be cleared on borrowed signal.
+11. **A one-sided threshold can be propped up by signal the check does not attribute** — a floor with no attribution and no upper bound can be cleared on borrowed signal.
 12. **A guard must constrain the population the assertion compares — AND exceed the band it defends** — a guard below its own tolerance certifies arithmetic, not agreement.
 13. **The tooling layer: a success message is not evidence that anything changed** — a script that cannot fail loudly will report success quietly.
     13a. **A string that looks right is not a string that is right — census the bytes, do not read them** — reading is what a homoglyph beats.
-14. **A scalar is not geometry — settle shape disputes with tables** — one number, or a prose noun, is a hypothesis; a table of descriptors is a measurement.
+14. **A scalar is not a shape — settle shape disputes with tables** — one number, or a prose noun, is a hypothesis; a table of descriptors is a measurement.
     14a. **Corollary — one descriptor is fragile, and a predicate must be immune to inputs that carry no information** — a degenerate input can flip a classification a table would not.
 15. **The falsification round is the closing move — and it must include the enabling step** — sabotage the assertion, the threshold AND every transform they depend on — and report the nulls.
 16. **Evidence must prove it came from the build it claims** — reload unconditionally, read a token you just changed out of the served build, abort on mismatch.
@@ -70,7 +82,7 @@ add this project's own case under a law the first time that law bites here.
 - **Metadata the gate can _validate_ is acceptable; metadata it must _trust_ is not.** A
   producer-emitted mask is fine if the gate checks the mask against the output before using it.
 - **Condition on the model, not on a producer flag.** A flag can be dropped; the model cannot.
-- **Emission is not visibility.** Counting what a renderer emitted does not prove it can be seen.
+- **Emission is not visibility.** Counting what a producer emitted (draw calls, log lines, events) does not prove anyone can see it.
   Where the deliverable is an image, assert against the delivered pixels.
 - **The graded artifact must be the emitted artifact.** A runner that grades output a later step
   overwrites is the same failure in the time dimension. Assert completeness (the file decodes, the

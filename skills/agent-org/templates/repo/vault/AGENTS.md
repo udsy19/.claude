@@ -39,7 +39,7 @@ merely written down, rather than gated, rots.
 | what "done" means for a whole track | [[Roadmap]] | [[Plan]] |
 | what the machine that builds this is, and which rules are enforced vs merely declared | [[Architecture]] | folk knowledge |
 | where every note in the vault is | [[Map]] | `ls vault/` |
-| the laws a gate must obey | `.claude/rules/gate-independence.md` (auto-loaded) | — |
+| the laws a gate must obey | `.claude/rules/gate-independence.md` (loads when you touch a gate, hook or test) | — |
 | why a law exists, and its worked case | [[Design/gate-independence-cases]] | asking |
 | which lines are live right now | [[Reports/audits/SESSION-REGISTRY]] | guessing from branch names |
 
@@ -65,7 +65,8 @@ re-checks every commit, because the hook cannot see a Bash write.
 
 ## 3. How a task runs
 
-1. The supervisor hands you **one plan row**, by number.
+1. The supervisor hands you **one plan row** by number, or a goal brief (a lane worker's brief is
+   its row).
 2. You open this page, then [[Map-code]] for where the code is, then [[Index]] to check
    **whether this was already done or already tried and rejected.** That check is the
    whole reason this page exists — the failure mode is not a wrong fix, it is the fifth
@@ -76,7 +77,8 @@ re-checks every commit, because the hook cannot see a Bash write.
 5. You do the work, with the gate written **first** and watched red before your change.
 6. You delete what your change supersedes, in the same change, and grep that nothing still
    references it.
-7. You leave: the change, the gate, the evidence, and a session note naming the row.
+7. You leave: the change, the gate, the evidence, and a session note naming the row. A lane
+   worker leaves its report instead; it writes no session note.
 
 ## 4. If you want the plan or the roadmap changed
 
