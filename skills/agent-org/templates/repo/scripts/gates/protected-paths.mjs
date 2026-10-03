@@ -72,6 +72,7 @@ const GRANTS = [
   [/may (?:write|edit)[^.]*\bvault\/Plan\.md/i, 'permits writing vault/Plan.md'],
   [/may (?:write|edit)[^.]*\bvault\/Roadmap\.md/i, 'permits writing vault/Roadmap.md'],
   [/may (?:write|edit)[^.]*\.claude\/rules\//i, 'permits writing .claude/rules/'],
+  [/may (?:write|edit)[^.]*\.claude\/settings\.json/i, 'permits writing .claude/settings.json'],
 ]
 // A document that EXPLAINS an old contradiction quotes its wording, and a detector that
 // cannot tell a quotation from a claim reports the explanation as the defect. Historical

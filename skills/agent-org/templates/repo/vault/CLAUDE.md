@@ -25,7 +25,7 @@ is SEARCHED, never read end to end.
 
 ## What an agent may NOT write, and this is ENFORCED
 
-`vault/Plan.md` · `vault/Roadmap.md` · `vault/Decisions/` · `.claude/rules/`
+`vault/Plan.md` · `vault/Roadmap.md` · `vault/Decisions/` · `.claude/rules/` · `.claude/settings.json`
 
 Declared once in `scripts/lib/protected-paths.mjs`; refused at the tool by
 `scripts/hooks/agent-contract.mjs` and graded again at the landing boundary by

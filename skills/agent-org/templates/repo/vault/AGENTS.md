@@ -59,7 +59,7 @@ owner ──────────── sets vision, rules on blocked decisio
 README), reports under `vault/Reports/`, and your own session note in `vault/Sessions/`.
 
 **You may NOT write:** `vault/Plan.md`, `vault/Roadmap.md`, `vault/Decisions/`,
-`.claude/rules/`. These are the supervisor's and the owner's. A hook enforces it — an
+`.claude/rules/`, `.claude/settings.json`. These are the supervisor's and the owner's. A hook enforces it — an
 `Edit` to one of those paths is refused, and tells you what to do instead — and a landing gate
 re-checks every commit, because the hook cannot see a Bash write.
 

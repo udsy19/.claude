@@ -1,6 +1,6 @@
 # Protected paths: supervisor and owner only
 
-`vault/Plan.md` · `vault/Roadmap.md` · `vault/Decisions/` · `.claude/rules/`
+`vault/Plan.md` · `vault/Roadmap.md` · `vault/Decisions/` · `.claude/rules/` · `.claude/settings.json`
 
 Only the roles `supervisor` and `owner` write these; every other agent proposes with
 `node scripts/propose.mjs --row <id> --kind split|reorder|add|done|challenge --why "<reason with a number>"`.

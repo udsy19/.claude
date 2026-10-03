@@ -65,7 +65,8 @@ verbatim · **—** may not write. "Worker" and "sub-agent" are both `ORG_ROLE` 
 | lane `reports/`, `renders/<agent>/` (owner references: `renders/owner/`) | — | read | read | W (own report, own renders) | — (via its worker) | `supervise.py` names the path |
 | `main` branch (landing) | W | W | W only if `may_land` (`LAND`) | — | — | `org-board.sh` on the merge; `sprawl.mjs`, `plan-ownership.mjs` |
 | work branches `lane/<lane>/<slug>` | — | — | MERGE into `lane/<lane>/integration` | W (its own) | — | `git-sync.sh` (never force) |
-| `.claude/settings.json`, hooks, role cards | W | W | — | — | — | review (no hook guards these) |
+| `.claude/settings.json` | W | W | — | P | P | `agent-contract.mjs` + `plan-ownership.mjs` (protected path) |
+| hook scripts, role cards | W | W | — | — | — | review (no hook guards these) |
 | Claude auto-memory | — | W (owner rulings, corrections) | — | — (no `memory:` frontmatter) | — | protocol |
 
 **What each may NOT write**, in one line each: the owner — nothing is closed to the owner. The

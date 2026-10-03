@@ -16,6 +16,7 @@ export const PROTECTED = [
   { path: 'vault/Roadmap.md', what: 'the track-level delivery checklist' },
   { path: 'vault/Decisions/', what: 'rulings that are law until superseded' },
   { path: '.claude/rules/', what: 'the laws every gate obeys' },
+  { path: '.claude/settings.json', what: 'the hooks that enforce these laws' },
 ]
 
 /** The roles (ORG_ROLE) that may write them. Everything else proposes. */

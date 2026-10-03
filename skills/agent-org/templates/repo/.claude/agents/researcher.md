@@ -25,7 +25,7 @@ fire for you.
    every unlanded branch (a plan row can name a symbol that only exists on a branch).
    `vault/Index.md` = what was already decided, measured or tried. `vault/Plan.md` = the ordered work.
 2. **What you may not write.** `vault/Plan.md`, `vault/Roadmap.md`, `vault/Decisions/`,
-   `.claude/rules/`. They belong to the supervisor and the owner.
+   `.claude/rules/`, `.claude/settings.json`. They belong to the supervisor and the owner.
 3. **How to change them anyway.** You propose; you never decree:
    ```bash
    node scripts/propose.mjs --row <n> --kind split|reorder|add|done|challenge \

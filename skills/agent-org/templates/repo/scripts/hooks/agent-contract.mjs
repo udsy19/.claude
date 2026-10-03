@@ -4,8 +4,8 @@
  *
  * Two jobs, both on Edit/Write:
  *
- *   1. OWNERSHIP. vault/Plan.md, vault/Roadmap.md, vault/Decisions/ and .claude/rules/
- *      belong to the supervisor and the owner (scripts/lib/protected-paths.mjs). A subagent
+ *   1. OWNERSHIP. vault/Plan.md, vault/Roadmap.md, vault/Decisions/, .claude/rules/ and
+ *      .claude/settings.json belong to the supervisor and the owner (scripts/lib/protected-paths.mjs). A subagent
  *      editing them is refused and told to use scripts/propose.mjs instead.
  *      `ORG_ROLE=supervisor` (or `owner`) lifts it.
  *
@@ -73,7 +73,7 @@ if (!AUTHORS.includes(role)) {
 `REFUSED — ${hit.path} is ${hit.what}, and it is not yours to edit.
 
 You are running as role "${role}". Only the supervisor and the owner write the plan, the
-roadmap, the decisions and the rules; that is what stops five agents holding five different
+roadmap, the decisions, the rules and the hooks that enforce them; that is what stops five agents holding five different
 ideas of what the work is.
 
 PROPOSE it instead — this reaches the supervisor and is answered, not dropped:
