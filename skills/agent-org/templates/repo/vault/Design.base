@@ -1,0 +1,29 @@
+filters:
+  and:
+    - or:
+        - file.inFolder("Design")
+        - file.inFolder("Decisions")
+    - file.ext == "md"
+properties:
+  status:
+    displayName: Status
+  updated:
+    displayName: Updated
+views:
+  - type: table
+    name: By status
+    groupBy:
+      property: status
+      direction: ASC
+    order:
+      - file.name
+      - status
+      - updated
+  - type: table
+    name: Needs triage
+    filters:
+      and:
+        - status == "review-needed"
+    order:
+      - file.name
+      - file.mtime

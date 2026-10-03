@@ -2,7 +2,7 @@
 
 Reference catalog of agent orchestration patterns this repo endorses, plus anti-patterns to avoid. Read this before adding a new slash command that coordinates multiple personas, or before introducing a new persona that "wraps" existing ones.
 
-The governing rule: **the user (or a slash command) is the orchestrator. Personas do not invoke other personas.** Skills are mandatory hops inside a persona's workflow.
+The governing rule: **the user (or a slash command) is the orchestrator. Personas do not invoke other personas.** Skills are mandatory hops inside a persona's workflow. The one deliberate exception is Pattern 6, where the owner explicitly delegates orchestration to a supervisor process and keeps the decision points.
 
 ---
 
@@ -114,6 +114,28 @@ main agent → research sub-agent (reads 50 files) → digest → main agent con
 
 ---
 
+### 6. Supervised lanes (long-running agent organisation)
+
+When the work is a standing product effort over days or weeks, not one task, run it as an organisation: one read-only supervisor per lane plans and judges, workers build in their own worktrees, and the owner rules on decisions through a file the supervisor reads every consult.
+
+```
+owner ↔ overseer (this session) → lane supervisor → workers (own worktree + branch) → sub-agents
+          goals go down · evidence (artifacts, screenshots, gaps) comes up · ASK_OWNER surfaces to the owner
+```
+
+**Use when:**
+- Several independent goals (lanes) need to progress in parallel for longer than one session
+- Work must survive restarts, usage limits and context loss (state lives in git, the vault and memory, not in a conversation)
+- The owner wants to rule on direction, not drive each step
+
+**Why it is not anti-pattern A, B, C or D:** the supervisor is not a paraphrasing router. It holds the lane's goal, rulings and memory, judges evidence, and decides merges, which is domain value no slash command carries. Workers never call other personas; their sub-agents report only to them (depth 1 below the worker). Human checkpoints are kept, not removed: ASK_OWNER questions and `rulings.md` are the owner's decision points. Unlike C, the owner hands over orchestration explicitly (the setup interview ends in their yes to a summary of lanes, models and rules), and the supervisor never paraphrases a step pipeline: each worker gets the goal, rulings and context verbatim, and reports evidence, not a summary.
+
+**Cost:** high and continuous (a supervisor consult per cycle plus up to N workers per lane). Set it up only for work that justifies it, never for a single feature.
+
+**On Claude Code:** the `agent-org` skill sets the whole thing up from one prompt (`/agent-org`). Read `skills/agent-org/docs/HIERARCHY.md` for the chain of command and the failure each guard exists for.
+
+---
+
 ## Claude Code compatibility
 
 This catalog is harness-agnostic, but most readers will run it on Claude Code. Here's how each pattern maps onto Claude Code's primitives — and where the platform enforces our rules for us.
@@ -142,7 +164,7 @@ One subtlety: the `skills` and `mcpServers` frontmatter fields in a persona are 
 
 Two rules in this catalog aren't just convention — Claude Code enforces them:
 
-- **"Subagents cannot spawn other subagents"** (verbatim from the docs). Anti-pattern B (persona-calls-persona) and Anti-pattern D (deep persona trees) cannot exist on Claude Code by construction.
+- **"Subagents cannot spawn other subagents"** (verbatim from the docs). Anti-pattern B (persona-calls-persona) and Anti-pattern D (deep persona trees) cannot exist on Claude Code by construction — within one session's Agent tool. Pattern 6 builds its depth from separate `claude -p` processes on purpose, so these guards don't apply to it; its own gates (the contract hook, the org board) do.
 - **"No nested teams"** — teammates cannot spawn their own teams. Same anti-patterns blocked at the team level.
 
 This means you can adopt the patterns in this catalog without worrying about contributors accidentally building the anti-patterns. They'll just fail to load.
@@ -345,6 +367,8 @@ An agent that calls `/spec`, then `/plan`, then `/build`, etc. on the user's beh
 When considering a new orchestrated workflow, walk this flow:
 
 ```
+Is this a standing, multi-goal effort that must run for days and survive restarts?
+└── Yes → Supervised lanes (Pattern 6, the agent-org skill). Stop.
 Is the work one perspective on one artifact?
 ├── Yes → Direct invocation. Stop.
 └── No  → Will the same composition repeat?

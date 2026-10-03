@@ -35,7 +35,7 @@ ADRs capture the reasoning behind significant technical decisions. They're the h
 
 ### ADR Template
 
-Store ADRs in `docs/decisions/` with sequential numbering:
+Store ADRs in `docs/decisions/` with sequential numbering. If the repo has `vault/Decisions/` (an agent-org project), that is the one decision store instead: write `NNNN-slug.md` from `vault/Templates/decision.md` — and since only the owner or supervisor writes there, everyone else files a proposal with `scripts/propose.mjs`. Two decision stores drift apart.
 
 ```markdown
 # ADR-001: Use PostgreSQL for primary database

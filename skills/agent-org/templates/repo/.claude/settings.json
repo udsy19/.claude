@@ -1,0 +1,56 @@
+{
+  "env": {
+    "ORG_MISSION": "{{MISSION}}",
+    "ORG_MAIN_BRANCH": "{{MAIN_BRANCH}}",
+    "ORG_BRANCH_GLOBS": "lane/*"
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|compact|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ \"${ORG_ROLE:-}\" = supervisor ] || cat \"$CLAUDE_PROJECT_DIR/vault/AGENTS.md\" 2>/dev/null || true"
+          },
+          {
+            "type": "command",
+            "command": "sed -n '/^## NOW/,/^## ---END-NOW/p' \"$CLAUDE_PROJECT_DIR/vault/Missions/{{MISSION}}.md\" 2>/dev/null || true"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/scripts/hooks/agent-contract.mjs\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/loop-guard.sh\""
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/usage-hook.sh\" 2>/dev/null || true"
+          }
+        ]
+      }
+    ]
+  }
+}

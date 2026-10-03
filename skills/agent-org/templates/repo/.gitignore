@@ -1,0 +1,18 @@
+# agent-org: per-machine and per-session state (never committed)
+vault/.obsidian/workspace*
+vault/.obsidian/cache
+vault/_log/agents.jsonl
+vault/_log/usage.jsonl
+vault/_log/ratelimit.jsonl
+vault/_log/usage-hook.err
+vault/_log/*.lock
+vault/.loop-blocks
+graphify-out/
+.DS_Store
+__pycache__/
+*.pyc
+# per-user Claude Code settings (the overseer's ORG_ROLE lives here, never in worker worktrees)
+.claude/settings.local.json
+# caches written by the global .claude config's hooks (sdd-cache, simplify-ignore)
+.claude/sdd-cache/
+.claude/.simplify-ignore-cache/
