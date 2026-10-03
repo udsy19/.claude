@@ -66,6 +66,7 @@ IMAGE_MAX = 12                                                     # pinned (ren
 ACTION_RE = re.compile(r"^=== (PLAN|AGENT|MERGE|LAND|ASK_OWNER|LEARN|MEMORY_CONSOLIDATED|DONE|KILL)\b", re.M)
 UNFILLED_RE = re.compile(r"\{\{[A-Z][A-Z0-9_]*\}\}")
 HUB_RE = re.compile(r"^vault/(.+/)?(README|Map)\.md$")            # files scripts/vault-hubs.mjs generates
+NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,40}$")                 # agent names: they become paths and branch names
 
 
 def now():
@@ -402,6 +403,19 @@ def merge(cwd, br, msg, why):
     return r
 
 
+def valid_ref(ref):
+    """A branch/base the supervisor named: never an option, never a revision expression, a legal branch name."""
+    return (not ref.startswith("-") and "@{" not in ref
+            and sh(f"cd {q(REPO)} && git check-ref-format --branch {q(ref)}").returncode == 0)
+
+
+def refuse_block(what, why):
+    """The supervisor's output is untrusted input: an invalid block is dropped, logged, and quoted back to it."""
+    log(f"REFUSED {what}: {why}")
+    ST["notes"].append(f"Your block `{what}` was refused ({why}); nothing was done for it.")
+    save_state()
+
+
 # ── main loop ────────────────────────────────────────────────────────────────────────────────────────
 def main():
     # One user runs the whole org (remote: worker_user; local: the owner). No user switching: refuse instead.
@@ -477,9 +491,16 @@ def main():
                 f.write(f"\n## Consult {rnd} ({now():%Y-%m-%d %H:%M} UTC)\n{qn}\n")
             log(f"ASK_OWNER: {qn[:200].replace(chr(10), ' ')}")
         for n in re.findall(r"=== KILL name=(\S+) ===", out):
+            if not NAME_RE.match(n):
+                refuse_block(f"KILL name={n}", "a name is 1-41 of a-z 0-9 -, starting alphanumeric")
+                continue
             kill_agent(n, running, pending)
-        merges = re.findall(r"=== MERGE branch=(\S+) ===", out)
-        lands = re.findall(r"=== LAND branch=(\S+) ===", out)
+        merges, lands = [], []
+        for kind, br in re.findall(r"=== (MERGE|LAND) branch=(\S+) ===", out):
+            if not valid_ref(br):
+                refuse_block(f"{kind} branch={br}", "not a legal branch name (git check-ref-format --branch)")
+                continue
+            (merges if kind == "MERGE" else lands).append(br)
         candidates = merges + lands
         for br in merges:
             r = merge(INT, br, f"{PREFIX}: merge {br} (consult {rnd})", f"MERGE {br} into {INT_BR} (consult {rnd})")
@@ -506,6 +527,12 @@ def main():
             log("supervisor declared DONE")
             break
         for n, mdl, base, b in re.findall(r"=== AGENT name=(\S+) model=(\S+)(?: base=(\S+))? ===\n(.*?)\n=== END AGENT ===", out, re.S):
+            if not NAME_RE.match(n):
+                refuse_block(f"AGENT name={n}", "a name is 1-41 of a-z 0-9 -, starting alphanumeric")
+                continue
+            if base and not valid_ref(base):
+                refuse_block(f"AGENT name={n} base={base}", "not a legal branch name (git check-ref-format --branch)")
+                continue
             if n in {x[2] for x in running} | {p[0] for p in pending}:
                 log(f"agent {n} already running/queued — duplicate ignored")
                 continue

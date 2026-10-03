@@ -7,7 +7,7 @@ j() { python3 -c "import json,sys;d=json.load(open(sys.argv[2]));print(eval(sys.
 CL=$(j 'd.get("claude_bin","claude")'); PI=$(j 'd.get("auth_probe_interval_s",1800)')
 PM=$(j 'd["worker_models"][d.get("default_worker_model") or next(iter(d["worker_models"]))]')
 # What counts as an event (scripts/test-supervise.sh reads this line). Log lines start "YYYY-MM-DD HH:MM" or "HH:MM".
-EVENTS=" start on |finished|ASK_OWNER|MERGE|LAND|DONE|FAILED|exiting|DIVERGED|refused|usage limit|restarted|KILL|NO ACTIONABLE BLOCK|REPORT OVERDUE|UNFILLED|SUPERVISOR ERROR"
+EVENTS=" start on |finished|ASK_OWNER|MERGE|LAND|DONE|FAILED|exiting|DIVERGED|refused|REFUSED|usage limit|restarted|KILL|NO ACTIONABLE BLOCK|REPORT OVERDUE|UNFILLED|SUPERVISOR ERROR"
 S=$ORG_ROOT/logs/lane-events.state; mkdir -p "$ORG_ROOT/logs"
 # Offsets live in $S ("<path> <lines>" per line), not in a bash-4 associative array: macOS ships bash 3.2.
 files() { ls "$ORG_ROOT"/lanes/*/lane.log "$ORG_ROOT"/logs/git-sync.log "$ORG_ROOT"/logs/*.run.log 2>/dev/null; }
