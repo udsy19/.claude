@@ -504,6 +504,68 @@ def refuse_block(what, why):
     save_state()
 
 
+LAND_GATES = (("plan-ownership", ["node", "scripts/gates/plan-ownership.mjs", "--since", "{base}"]),
+              ("sprawl", ["node", "scripts/gates/sprawl.mjs", "--base", "{base}", "--tip", "HEAD"]),
+              ("protected-paths", ["node", "scripts/gates/protected-paths.mjs"]))
+
+
+def land_gates(br):
+    """Run the landing gates on the candidate. The gate CODE comes from main (a branch cannot weaken the gate that
+    judges it); the content and history are the candidate's. Returns (ok, report). Exit 0 passes, 77 is an empty
+    range (nothing to land), anything else refuses."""
+    missing = [g for g, a in LAND_GATES if sh(f"cd {q(REPO)} && git cat-file -e {q(f'{MAIN_BR}:{a[1]}')}").returncode]
+    if missing:
+        return False, f"the landing gates are not on {MAIN_BR} ({', '.join(missing)}): install the agent-org repo layer first"
+    base = git_out(f"git merge-base {q(MAIN_BR)} {q(br)}")
+    if not base:
+        return False, f"{br} shares no history with {MAIN_BR}"
+    tmp = f"{R}/land-tmp"
+    sh(f"cd {q(REPO)} && (git worktree remove --force {q(tmp)}; rm -rf {q(tmp)}; git worktree prune) 2>/dev/null")
+    if sh(f"cd {q(REPO)} && git worktree add -q --detach {q(tmp)} {q(br)}").returncode:
+        return False, f"could not check out {br} to grade it"
+    try:
+        sh(f"cd {q(tmp)} && git checkout -q {q(MAIN_BR)} -- scripts/gates scripts/lib")
+        env = {**os.environ, "ORG_MAIN_BRANCH": MAIN_BR}
+        out, ok = [], True
+        for g, args in LAND_GATES:
+            r = subprocess.run([a.format(base=base) for a in args], cwd=tmp, env=env, text=True, capture_output=True)
+            passed = r.returncode in (0, 77)
+            ok &= passed
+            tail = "\n".join((r.stdout + r.stderr).strip().splitlines()[-12:])
+            out.append(f"### {g}: exit {r.returncode} ({'pass' if passed else 'FAIL'})\n```\n{tail}\n```")
+        return ok, "\n\n".join(out)
+    finally:
+        sh(f"cd {q(REPO)} && git worktree remove --force {q(tmp)}")
+
+
+def refuse_land(br, rnd, why, detail=""):
+    """A refused landing is logged, written where the supervisor and the overseer read, and never merged."""
+    log(f"LAND {br} REFUSED — {why}")
+    open(f"{R}/reports/{rnd:04d}-zz-land-refused-{br.replace('/', '-')}.md", "w").write(
+        f"# LAND of {br} on {MAIN_BR} REFUSED (consult {rnd})\n\n{why}\n\n{detail}\n")
+    ST["notes"].append(f"LAND {br} was refused: {why}. See reports/{rnd:04d}-zz-land-refused-{br.replace('/', '-')}.md.")
+    save_state()
+
+
+def land(br, rnd):
+    if not LANE.get("may_land"):
+        log(f"LAND {br} REFUSED — this lane may not land on main")
+        return
+    head = git_out("git symbolic-ref --short -q HEAD")
+    if head != MAIN_BR:         # a merge lands on whatever is checked out: only ever on main
+        return refuse_land(br, rnd, f"{REPO} has {head or 'a detached HEAD'} checked out, not {MAIN_BR}")
+    ok, report = land_gates(br)
+    if not ok:
+        return refuse_land(br, rnd, "the landing gates failed", report)
+    r = merge(REPO, br, f"{PREFIX}: land {br} on {MAIN_BR} (consult {rnd})\n\nAuthority: supervisor",
+              f"LAND {br} on {MAIN_BR} (consult {rnd})")
+    if r.returncode:
+        sh(f"cd {q(REPO)} && git merge --abort")
+        log(f"LAND {br} CONFLICT — aborted, main untouched")
+    else:
+        log(f"LAND {br} ok ({git_out('git rev-parse --short HEAD')})")
+
+
 # ── main loop ────────────────────────────────────────────────────────────────────────────────────────
 def main():
     # One user runs the whole org (remote: worker_user; local: the owner). No user switching: refuse instead.
@@ -601,16 +663,7 @@ def main():
                 sh(f"cd {q(INT)} && git push -q origin {q(INT_BR)}")
                 log(f"MERGE {br} ok")
         for br in lands:
-            if not LANE.get("may_land"):
-                log(f"LAND {br} REFUSED — this lane may not land on main")
-                continue
-            r = merge(REPO, br, f"{PREFIX}: land {br} on {MAIN_BR} (consult {rnd})\n\nAuthority: supervisor",
-                      f"LAND {br} on {MAIN_BR} (consult {rnd})")
-            if r.returncode:
-                sh(f"cd {q(REPO)} && git merge --abort")
-                log(f"LAND {br} CONFLICT — aborted, main untouched")
-            else:
-                log(f"LAND {br} ok ({git_out('git rev-parse --short HEAD')})")
+            land(br, rnd)
         if re.search(r"^=== DONE ===", out, re.M):
             log("supervisor declared DONE")
             break

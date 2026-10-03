@@ -23,18 +23,31 @@ tmo() { perl -e 'alarm shift; exec @ARGV or die "exec $ARGV[0]: $!"' "$@"; }
 export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.invalid GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.invalid
 
 echo "== sandbox $SB"
-# ── the project repo: main + a vault with generated hubs, and an origin to push to ──
+# ── the project repo: the agent-org repo layer installed by init-repo.mjs (vault, gates), an origin to push to ──
 git init -q --bare "$SB/origin.git"
 git init -q -b main "$REPO" && cd "$REPO" || exit 2
-mkdir -p vault/Reports scripts/lib
-cp "$KIT/templates/repo/scripts/vault-hubs.mjs" scripts/; cp "$KIT/templates/repo/scripts/lib/argv.mjs" scripts/lib/
-printf '# Home\n\nStart here. [[Map]]\n' > vault/Home.md
-printf 'node_modules/\n' > .gitignore; mkdir -p node_modules/dep && echo shared > node_modules/dep/index.js
+git commit -q --allow-empty -m root
+cat > "$SB/vars.json" <<'JSON'
+{"PROJECT": "Sandbox", "MAIN_BRANCH": "main", "MISSION": "first-mission", "MISSION_TITLE": "First mission",
+ "MISSION_GOAL": "Ship the sandbox", "VISION_ONE_LINER": "A sandbox", "USERS": "testers", "ACCEPTANCE_BAR": "works",
+ "OWNER_WORDS": "make it work", "NOT_WORKED": "nothing yet", "NEXT_MOVE": "start", "FIRST_TRACK": "core",
+ "FIRST_TRACK_ITEM": "scaffold", "SOURCE_AREAS": "| `src/` | code | src/index.js |", "SUPERVISOR_DESC": "canned",
+ "WORKER_DESC": "fake", "RUNTIME": "local", "HOST": "localhost", "ORG_ROOT": "/tmp/org", "STATE_BRANCH": "backup/lane-state",
+ "LANE_TABLE": "| t | test | lane/t/* | lane/t/* | 2 | yes |", "EXTRA_RULINGS": "- (none yet)"}
+JSON
+node "$KIT/scripts/init-repo.mjs" --repo "$REPO" --vars "$SB/vars.json" > "$SB/init-repo.out" 2>&1 \
+  || { echo "init-repo failed in the sandbox:"; tail -5 "$SB/init-repo.out"; exit 2; }
+printf 'node_modules/\n' >> .gitignore; mkdir -p node_modules/dep && echo shared > node_modules/dep/index.js
 mkdir -p .claude/rules && printf '# Owner rulings\n\n- RULING-PROJECT-42: the standing law of the project\n' > .claude/rules/owner-rulings.md
-printf '# Agents\n\nThe contract.\n' > vault/AGENTS.md      # lanes.sh new refuses a main without it
 printf '# First report\n\nMeasured something.\n' > vault/Reports/first.md
 node scripts/vault-hubs.mjs >/dev/null || { echo "vault-hubs failed in the sandbox"; exit 2; }
-git add -A && git commit -qm "init" && git remote add origin "$SB/origin.git" && git push -q origin main
+git add -A && git commit -q -F - <<'MSG' && git remote add origin "$SB/origin.git" && git push -q origin main
+agent-org set-up for the sandbox
+
+Authority: owner
+EVIDENCE-GROWTH: vault/Home.md, scripts/gates/org-board.sh and .claude/rules/owner-rulings.md arrive with the
+repo layer so that the loop's landing gates have a real project to grade in this sandbox.
+MSG
 
 # ── fakes ──
 cat > "$SB/fake-claude.sh" <<'EOF'
@@ -56,9 +69,21 @@ case "$AGENT_NAME" in
   beta) sleep 8;;
 esac
 echo "lane=$ORG_LANE headless=$AGENT_ORG_HEADLESS role=$ORG_ROLE" > "$LANE_ROOT/env-$AGENT_NAME.seen"
-echo "$AGENT_NAME" > "work-$AGENT_NAME.txt"
-[ "$AGENT_NAME" = alpha ] && printf '# Alpha finding\n\nAlpha measured a thing.\n' > vault/Reports/alpha-finding.md
-git add -A && git commit -qm "$AGENT_NAME work"
+msg="$AGENT_NAME work"
+case "$AGENT_NAME" in
+  planner)   # changes the plan, claims no authority, and neuters the gate on its branch: still refused
+    echo "- planner moved a row on its own" >> vault/Plan.md; msg="planner: retune the plan"
+    printf 'process.exit(0)\n' > scripts/gates/plan-ownership.mjs;;
+  clean)     # a justified addition: lands
+    printf '# Clean note\n\nMeasured cleanly.\n' > vault/Reports/clean-note.md
+    msg=$(printf 'clean: record the measurement\n\nEVIDENCE-GROWTH: vault/Reports/clean-note.md holds the measurement the lane needs, recorded once so nobody measures it again.');;
+  *) echo "$AGENT_NAME" > "work-$AGENT_NAME.txt"
+     if [ "$AGENT_NAME" = alpha ]; then
+       printf '# Alpha finding\n\nAlpha measured a thing.\n' > vault/Reports/alpha-finding.md
+       msg=$(printf 'alpha work\n\nEVIDENCE-GROWTH: vault/Reports/alpha-finding.md and work-alpha.txt record what alpha measured, which the lane needs to judge the next step.')
+     fi;;
+esac
+git add -A && git commit -qm "$msg"
 printf 'PNG-%s' "$AGENT_NAME" > "$RENDERS_DIR/$AGENT_NAME.png"
 { printf '## TL;DR\nTLDR-%s: done, evidence in renders.\n\n## Vault check\nread vault/Index.md\n\n' "$AGENT_NAME"
   python3 -c "print('filler line\n' * 350, end='')"; echo "MIDDLE-SECRET-$AGENT_NAME"
@@ -298,6 +323,31 @@ printf '#!/usr/bin/env bash\nn=$(( $(cat %q 2>/dev/null || echo 0) + 1 )); echo 
 python3 -c "import json,sys; d=json.load(open(sys.argv[1])); d['usage_limit_wait_s']=2; json.dump(d,open(sys.argv[1],'w'))" "$O8/org.json"
 vrc=0; (cd "$L8" && ORG_ROOT=$O8 tmo 40 python3 "$O8/supervise.py" "$L8" 1 > "$SB/v.out" 2>&1) || vrc=$?
 check "B6: a limit on stderr waits, then consults again (rc $vrc)" "[ $vrc = 0 ] && has $L8/lane.log 'supervisor hit a usage limit' && has $L8/lane.log 'supervisor declared DONE' && [ \$(cat $O8/count) = 2 ]"
+
+# ── B3/B2: LAND runs the gates (code from main) and lands only on a checked-out main ──
+echo "== LAND gates"
+mayland() { python3 -c "import json,sys; d=json.load(open(sys.argv[1])); d['may_land']=True; json.dump(d,open(sys.argv[1],'w'))" "$1/lane.json"; }
+O9=$SB/org9; L9=$O9/lanes/gate
+newlane "$O9" gate 120 '=== AGENT name=planner model=opus ===\nretune\n=== END AGENT ===\n' \
+  '=== LAND branch=lane/gate/planner ===\n=== AGENT name=clean model=opus ===\nmeasure\n=== END AGENT ===\n' \
+  '=== LAND branch=lane/gate/clean ===\n'
+mayland "$L9"
+main0=$(git -C "$REPO" rev-parse main)
+grc=0; (cd "$L9" && ORG_ROOT=$O9 tmo 120 python3 "$O9/supervise.py" "$L9" 1 > "$SB/g.out" 2>&1) || grc=$?
+RF=$(ls "$L9"/reports/*-zz-land-refused-lane-gate-planner.md 2>/dev/null)
+check "B3: a Plan.md change with no Authority: is refused (rc $grc)" "[ $grc = 0 ] && has $L9/lane.log 'LAND lane/gate/planner REFUSED — the landing gates failed' && [ -n '$RF' ] && grep -q 'plan-ownership: exit 1 (FAIL)' '$RF'"
+check "B3: the gate code is main's, not the candidate's (its neutered gate did not pass it)" "git -C $REPO show lane/gate/planner:scripts/gates/plan-ownership.mjs | grep -qx 'process.exit(0)' && grep -q 'PLAN-OWNERSHIP\\|Authority' '$RF'"
+check "B3: ...never merged: main does not carry the planner's commit" "! git -C $REPO merge-base --is-ancestor lane/gate/planner main"
+check "B3: a clean, justified candidate lands" "has $L9/lane.log 'LAND lane/gate/clean ok' && git -C $REPO merge-base --is-ancestor lane/gate/clean main"
+check "B3: the refusal reaches the supervisor and the event feed" "has $O9/seen-3.txt 'LAND lane/gate/planner was refused' && grep -E \"\$EVENTS\" $L9/lane.log | grep -q 'LAND lane/gate/planner REFUSED'"
+O10=$SB/org10; L10=$O10/lanes/p
+newlane "$O10" p 120 '=== AGENT name=parker model=opus ===\nwork\n=== END AGENT ===\n' '=== LAND branch=lane/p/parker ===\n'
+mayland "$L10"
+git -C "$REPO" checkout -q -b parked main; main1=$(git -C "$REPO" rev-parse main)
+prc=0; (cd "$L10" && ORG_ROOT=$O10 tmo 120 python3 "$O10/supervise.py" "$L10" 1 > "$SB/p.out" 2>&1) || prc=$?
+check "B2: LAND refused while the repo has another branch checked out (rc $prc)" "[ $prc = 0 ] && has $L10/lane.log 'LAND lane/p/parker REFUSED — $REPO has parked checked out, not main' && ls $L10/reports/*-zz-land-refused-lane-p-parker.md >/dev/null 2>&1"
+check "B2: ...main and the parked branch are untouched" "[ \$(git -C $REPO rev-parse main) = $main1 ] && [ \$(git -C $REPO rev-parse parked) = $main1 ]"
+git -C "$REPO" checkout -q main
 
 # ── decision 9: prompts travel on stdin, never argv (Linux caps one argument at 128 KiB) ──
 echo "== prompts on stdin"
