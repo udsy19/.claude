@@ -209,5 +209,34 @@ PATH=$(path_without crontab) boot FAKE_UID=1001 FAKE_USER=agent
 check "remote phase 2, no crontab: the worker's own systemd --user timer" "[ $(rc) = 0 ] && [ -f '$U_.timer' ]"
 ORG=$SB/org
 
+echo "== A5 snapshot: recovery state only, secrets stripped, pushed to origin"
+mkorg "{'api_token':'TOPSECRET-1','worker_env':{'PATH':'/usr/bin','ANTHROPIC_API_KEY':'TOPSECRET-2'},'supervisor':{'backend':'claude','model':'opus','Auth':'TOPSECRET-3'},'state_backup':{'include':['prompts']}}"
+L="$ORG/lanes/t"; mkdir -p "$L"/{prompts,rounds,reports,renders/owner,renders/latest,renders/old,wt/a1,logs}
+for f in plan.md lane-memory.md lane-memory.archive-20261001-0000.md rulings.md owner-questions.md lane.json loop-state.json \
+         context.md owner-answers.md supervisor-brief.md agent-rules.md supervise.out lane.log prompts/0001-a1.md rounds/0001-supervisor.md \
+         reports/0001-a1.md renders/owner/pin.png renders/latest/last.png renders/old/stale.png wt/a1/code.txt logs/0001-a1.log; do echo "$f" > "$L/$f"; done
+git -C "$SB/repo" checkout -q main
+bash "$SC/state-snapshot.sh" "$ORG" > "$SB/snap.out" 2>&1
+check "first snapshot (include: prompts) pushed with prompts/" "git -C '$SB/origin.git' ls-tree -r --name-only backup/lane-state | grep -qx 'lanes/t/prompts/0001-a1.md'"
+python3 - "$ORG/org.json" <<'PY2'
+import json,sys; d=json.load(open(sys.argv[1])); d.pop("state_backup"); json.dump(d,open(sys.argv[1],"w"))
+PY2
+bash "$SC/state-snapshot.sh" "$ORG" >> "$SB/snap.out" 2>&1
+git -C "$SB/origin.git" ls-tree -r --name-only backup/lane-state > "$SB/tree.txt"; git -C "$SB/origin.git" show backup/lane-state:org.json > "$SB/org.pushed.json"
+for f in plan.md lane-memory.md lane-memory.archive-20261001-0000.md rulings.md owner-questions.md lane.json loop-state.json renders/owner/pin.png renders/latest/last.png; do
+  check "pushed: lanes/t/$f" "grep -qx 'lanes/t/$f' '$SB/tree.txt'"; done
+check "pushed tree lacks prompts/, rounds/, reports/ (prompts dropped once no longer included)" "! grep -qE '^lanes/t/(prompts|rounds|reports)/' '$SB/tree.txt'"
+check "pushed tree lacks owner-answers.md, context.md, briefs, supervise.out, logs" "! grep -qE '^lanes/t/(owner-answers|context|supervisor-brief|agent-rules)\.md$|supervise\.out|lane\.log|/logs/' '$SB/tree.txt'"
+check "pushed tree lacks worktrees and unpinned renders" "! grep -qE '^lanes/t/(wt/|renders/old/)' '$SB/tree.txt'"
+check "pushed org.json: no secrets-shaped keys at any depth" "! grep -q TOPSECRET '$SB/org.pushed.json' && python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));assert d[\"repo\"] and d[\"worker_env\"]==dict(PATH=\"/usr/bin\") and \"api_token\" not in d' '$SB/org.pushed.json'"
+check "only lanes/ and org.json at the top" "[ \"\$(cut -d/ -f1 '$SB/tree.txt' | sort -u | tr '\n' ' ')\" = 'lanes org.json ' ]"
+
+rm -rf "$ORG/state-wt"; echo more > "$L/plan.md"; bash "$SC/state-snapshot.sh" "$ORG" >> "$SB/snap.out" 2>&1
+check "state-wt deleted: pruned, re-created, snapshot still pushed" "[ \"\$(git -C '$SB/origin.git' show backup/lane-state:lanes/t/plan.md)\" = more ]"
+rm -rf "$ORG/state-wt"; mkdir -p "$ORG/state-wt"; h=$(git -C "$SB/repo" rev-parse HEAD)
+bash "$SC/state-snapshot.sh" "$ORG" > "$SB/snap2.out" 2>&1; r=$?
+check "state-wt is a plain dir: refuses (exit 1), commits nothing anywhere" "[ $r = 1 ] && has '$SB/snap2.out' 'no snapshot worktree' && [ \$(git -C '$SB/repo' rev-parse HEAD) = $h ] && [ -z \"\$(git -C '$SB/repo' status --porcelain)\" ]"
+rm -rf "$ORG/state-wt"; git -C "$SB/repo" worktree prune
+
 echo "== $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]
