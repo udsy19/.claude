@@ -286,6 +286,19 @@ newlane "$O4" h 3 '=== AGENT name=hang model=opus ===\nhang\n=== END AGENT ===\n
 hrc=0; (cd "$L4" && ORG_ROOT=$O4 tmo 90 python3 "$O4/supervise.py" "$L4" 1 > "$SB/h.out" 2>&1) || hrc=$?
 check "B8: a deadline kills the agent's whole process group (rc $hrc)" "[ $hrc = 0 ] && has $L4/lane.log 'agent hang TIMED OUT' && grep -q 'agent hang finished rc=124' $L4/lane.log && ! pgrep -f '$L4/wt/hang' >/dev/null"
 
+# ── B6: a usage limit is the CLI's complaint, never a word in a normal reply ──
+echo "== usage-limit detection"
+O7=$SB/org7; L7=$O7/lanes/u
+newlane "$O7" u 120 '=== PLAN ===\nWe are well within quota.\n=== END PLAN ===\n'
+qrc=0; (cd "$L7" && ORG_ROOT=$O7 tmo 40 python3 "$O7/supervise.py" "$L7" 1 > "$SB/u.out" 2>&1) || qrc=$?
+check "B6: a short reply saying 'quota' is not a usage limit (rc $qrc)" "[ $qrc = 0 ] && ! has $L7/lane.log 'usage limit' && has $L7/lane.log 'supervisor declared DONE'"
+O8=$SB/org8; L8=$O8/lanes/v
+newlane "$O8" v 120
+printf '#!/usr/bin/env bash\nn=$(( $(cat %q 2>/dev/null || echo 0) + 1 )); echo $n > %q; cat >/dev/null\n[ $n = 1 ] && { echo "Claude usage limit reached" >&2; exit 1; }\nprintf "=== DONE ===\\n"\n' "$O8/count" "$O8/count" > "$O8/sup.sh"
+python3 -c "import json,sys; d=json.load(open(sys.argv[1])); d['usage_limit_wait_s']=2; json.dump(d,open(sys.argv[1],'w'))" "$O8/org.json"
+vrc=0; (cd "$L8" && ORG_ROOT=$O8 tmo 40 python3 "$O8/supervise.py" "$L8" 1 > "$SB/v.out" 2>&1) || vrc=$?
+check "B6: a limit on stderr waits, then consults again (rc $vrc)" "[ $vrc = 0 ] && has $L8/lane.log 'supervisor hit a usage limit' && has $L8/lane.log 'supervisor declared DONE' && [ \$(cat $O8/count) = 2 ]"
+
 # ── decision 9: prompts travel on stdin, never argv (Linux caps one argument at 128 KiB) ──
 echo "== prompts on stdin"
 O5=$SB/org5; L5=$O5/lanes/b

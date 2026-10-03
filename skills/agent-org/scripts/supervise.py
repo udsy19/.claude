@@ -42,6 +42,8 @@ SUPERVISOR_TOOLS = "Read,Grep,Glob,WebSearch,WebFetch"         # a Claude superv
 REPORT_OVERDUE_S = int(ORG.get("report_overdue_s", 90 * 60))   # a running agent with no report file after this: warn once
 POLL_S = int(ORG.get("poll_interval_s", 30))
 IDLE_WAIT_S = int(ORG.get("idle_wait_s", 1200))              # nothing running: wait this long for owner answers / changes
+USAGE_WAIT_S = int(ORG.get("usage_limit_wait_s", 1800))      # supervisor hit a usage limit: wait, then consult again
+LIMIT_RE = re.compile(r"usage limit|rate limit|quota|credit balance", re.I)
 WORKER_USER = ORG.get("worker_user") or ""                 # remote runtime: the ONE user that runs the whole org
 SUP = ORG["supervisor"]                                     # {"backend": "codex"|"claude", "model": ..., ...}
 MODELS = ORG["worker_models"]                               # {"opus": "claude-opus-5-5", "sonnet": "sonnet"}
@@ -253,12 +255,13 @@ def consult(prompt, out, cwd, images=()):
         text = p.stdout
         open(out, "w").write(text)
         open(out + ".err", "w").write(p.stderr)
-        if re.search(r"usage limit|rate limit|quota|credit balance", p.stderr + text, re.I) and len(text) < 2000:
-            log("supervisor hit a usage limit — waiting 30 min")
-            for _ in range(60):
+        # A limit is the CLI's complaint (stderr, or a failed exit), never a word in a normal reply
+        if LIMIT_RE.search(p.stderr) or (p.returncode != 0 and LIMIT_RE.search(text)):
+            log(f"supervisor hit a usage limit — waiting {USAGE_WAIT_S // 60} min")
+            for _ in range(max(1, USAGE_WAIT_S // POLL_S)):
                 if stopped():
                     return ""
-                time.sleep(30)
+                time.sleep(POLL_S)
             continue
         return text
 
