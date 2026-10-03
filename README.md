@@ -69,44 +69,44 @@ Three layers, by design:
 
 ## Install
 
-Claude Code reads a `.claude` folder at two scopes. Pick one:
-
-<details open>
-<summary><b>Global — applies to every project (recommended)</b></summary>
+One command installs the config; after that, `/setup` does the rest from inside Claude Code.
 
 ```bash
-# clone, then copy the contents into your user-level .claude
 git clone https://github.com/udsy19/.claude.git claude-config
-cp -R claude-config/{skills,agents,commands,hooks,rules,references} ~/.claude/
-cp claude-config/settings.json ~/.claude/settings.json   # merge if you already have one
+node claude-config/skills/agent-org/scripts/setup.mjs --scope base --install global
 ```
 
-> The same `settings.json` works in both scopes: each hook command runs the project's copy (`$CLAUDE_PROJECT_DIR/.claude/hooks/…`) if there is one, else the global one (`~/.claude/hooks/…`), and does nothing if neither exists. No path editing needed.
+That copies `skills`, `agents`, `commands`, `hooks`, `rules` and `references` into `~/.claude/` and merges
+`settings.json` into yours: nothing of yours is overwritten, and missing permissions and hook commands are
+added. To install into one project instead (shared with your team via git), run it with
+`--install project --project your-project`. That also puts `.mcp.json` at the project root, where MCP config
+belongs.
+
+Then, in any project, run **`/setup`**. It asks a short tiered interview, with a default on every question,
+remembers the answers in `~/.claude/setup.json`, and installs:
+
+| scope | what you get |
+|---|---|
+| `base` | this config, globally or in the project |
+| `vault` | base plus the agent-org vault in this project: Obsidian mission control, rules, gates and the PR-gate workflow |
+| `org` | the vault plus a supervised agent organisation: the full [`/agent-org`](#agent-organisation-agent-org) interview, `org.json`, and the host bootstrap |
+
+Re-running `/setup` changes nothing unless you pick "Change answers". An answer that can't be migrated
+(say, moving the config from global to project) is refused, with what to do by hand.
+
+> The same `settings.json` works in both scopes: each hook command runs the project's copy
+> (`$CLAUDE_PROJECT_DIR/.claude/hooks/…`) if there is one, else the global one (`~/.claude/hooks/…`), and does
+> nothing if neither exists.
 >
-> The cache hooks write to `.claude/sdd-cache/` and `.claude/.simplify-ignore-cache/` inside whichever project you work in, so add those two lines to each project's `.gitignore` (agent-org projects get them automatically).
-
-</details>
-
-<details>
-<summary><b>Per-project — shared with your team via git</b></summary>
-
-```bash
-cp -R claude-config/{skills,agents,commands,hooks,rules,references,settings.json} your-project/.claude/
-cp claude-config/.mcp.json your-project/.mcp.json        # MCP config lives at the project ROOT
-```
-
-Then add the hook cache directories to your project's `.gitignore`:
-
-```
-.claude/sdd-cache/
-.claude/.simplify-ignore-cache/
-```
-
-</details>
+> The cache hooks write to `.claude/sdd-cache/` and `.claude/.simplify-ignore-cache/` inside whichever project
+> you work in, so add those two lines to its `.gitignore` (vault projects get them automatically).
+>
+> In a git repo without a vault, the **vault gate** blocks the first edit of each session once, reminding you to
+> run `/setup`. To work there without a vault, `touch .claude/no-vault` or set `ORG_VAULT=off`.
 
 > [!IMPORTANT]
 > - Contents go **directly** under `.claude/` (i.e. `.claude/skills/...`), not nested in a sub-folder.
-> - `.mcp.json` belongs at the **project root**, next to `.claude/` — not inside it.
+> - `.mcp.json` belongs at the **project root**, next to `.claude/`, not inside it.
 > - `.claude/rules/*.md` files without a `paths:` field auto-load every session (that's how `no-bloat.md` is always enforced).
 
 ## Requirements

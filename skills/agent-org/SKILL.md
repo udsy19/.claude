@@ -16,6 +16,11 @@ The vault, memory, session-handoff, rules and recovery layers come with it. Ever
 from `templates/` and `scripts/` in this skill's folder (`KIT` below). Fill the placeholders; never invent
 a different structure.
 
+**`/agent-org` is `/setup` with scope=org** (`commands/setup.md`). `/setup` asks the base and vault
+questions, remembers every answer (`~/.claude/setup.json`, `<ORG_ROOT>/org.json`), and installs with
+`KIT/scripts/setup.mjs`; its tier 3 is §1 below. Start there: `node KIT/scripts/setup.mjs --show` lists what is
+already answered, and you never ask those again.
+
 **Already set up?** If the repo has `vault/AGENTS.md` and the host has an `<ORG_ROOT>/org.json`, this org
 exists: don't re-run setup. Follow `KIT/templates/handoff/session-protocol.md`, and use `lanes.sh` for lane
 changes.
@@ -31,7 +36,8 @@ The repo layer's own contracts are in `templates/repo/vault/` (`CLAUDE.md`, `AGE
 channels, the research flow and the supervisor's memory).
 
 ## 1. Interview the owner (AskUserQuestion; at most 4 questions per call; skip what they already said)
-Ask for, and record verbatim:
+This is `/setup`'s tier 3, the only copy of these questions. Skip what `setup.mjs --show` already holds
+(the project, its vision and main branch may come from tiers 1–2). Ask for, and record verbatim:
 1. **Project:** name, the repo path (existing or new), and the main branch. Does pushing main deploy
    anywhere? If so, a landing is a deploy.
 2. **Vision:** a one-liner; who uses it; the acceptance bar ("works as well as X", "Y-level output").
