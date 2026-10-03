@@ -5,7 +5,10 @@
 #   bash scripts/test-supervise.sh          (KEEP=1 keeps the sandbox for inspection)
 # Exercises: dispatch → finish → MERGE + LAND (hubs regenerated) → REPORT OVERDUE → KILL → NO ACTIONABLE BLOCK
 # → DONE; rulings/owner-answers trimming; report digests; code view; image freshness; hub-only merge conflict;
-# gc; lane-metrics (dated and legacy undated lines).
+# gc; lane-metrics (dated and legacy undated lines); single-user refusal (B1); hostile block refusal (A1);
+# supervisor allowlist (A2); worktree_links (A3); LAND on main only (B2) after the gates (B3); usage limits (B6);
+# agent lifetime without GNU timeout: restart adoption, deadlines (B8); budget caps and totals (D1/D2);
+# project owner-rulings in every consult (D7); prompts on stdin (D9).
 set -u
 KIT=$(cd "$(dirname "$0")/.." && pwd)
 SB=$(mktemp -d /tmp/supervise-test.XXXXXX)
@@ -332,7 +335,6 @@ newlane "$O9" gate 120 '=== AGENT name=planner model=opus ===\nretune\n=== END A
   '=== LAND branch=lane/gate/planner ===\n=== AGENT name=clean model=opus ===\nmeasure\n=== END AGENT ===\n' \
   '=== LAND branch=lane/gate/clean ===\n'
 mayland "$L9"
-main0=$(git -C "$REPO" rev-parse main)
 grc=0; (cd "$L9" && ORG_ROOT=$O9 tmo 120 python3 "$O9/supervise.py" "$L9" 1 > "$SB/g.out" 2>&1) || grc=$?
 RF=$(ls "$L9"/reports/*-zz-land-refused-lane-gate-planner.md 2>/dev/null)
 check "B3: a Plan.md change with no Authority: is refused (rc $grc)" "[ $grc = 0 ] && has $L9/lane.log 'LAND lane/gate/planner REFUSED — the landing gates failed' && [ -n '$RF' ] && grep -q 'plan-ownership: exit 1 (FAIL)' '$RF'"
