@@ -224,10 +224,10 @@ import json,sys; d=json.load(open(sys.argv[1])); d.pop("state_backup"); json.dum
 PY2
 bash "$SC/state-snapshot.sh" "$ORG" >> "$SB/snap.out" 2>&1
 git -C "$SB/origin.git" ls-tree -r --name-only backup/lane-state > "$SB/tree.txt"; git -C "$SB/origin.git" show backup/lane-state:org.json > "$SB/org.pushed.json"
-for f in plan.md lane-memory.md lane-memory.archive-20261001-0000.md rulings.md owner-questions.md lane.json loop-state.json renders/owner/pin.png renders/latest/last.png; do
+for f in plan.md lane-memory.md lane-memory.archive-20261001-0000.md rulings.md owner-questions.md lane.json loop-state.json context.md supervisor-brief.md renders/owner/pin.png renders/latest/last.png; do
   check "pushed: lanes/t/$f" "grep -qx 'lanes/t/$f' '$SB/tree.txt'"; done
 check "pushed tree lacks prompts/, rounds/, reports/ (prompts dropped once no longer included)" "! grep -qE '^lanes/t/(prompts|rounds|reports)/' '$SB/tree.txt'"
-check "pushed tree lacks owner-answers.md, context.md, briefs, supervise.out, logs" "! grep -qE '^lanes/t/(owner-answers|context|supervisor-brief|agent-rules)\.md$|supervise\.out|lane\.log|/logs/' '$SB/tree.txt'"
+check "pushed tree lacks owner-answers.md, agent-rules.md, supervise.out, logs" "! grep -qE '^lanes/t/(owner-answers|agent-rules)\.md$|supervise\.out|lane\.log|/logs/' '$SB/tree.txt'"
 check "pushed tree lacks worktrees and unpinned renders" "! grep -qE '^lanes/t/(wt/|renders/old/)' '$SB/tree.txt'"
 check "pushed org.json: no secrets-shaped keys at any depth" "! grep -q TOPSECRET '$SB/org.pushed.json' && python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));assert d[\"repo\"] and d[\"worker_env\"]==dict(PATH=\"/usr/bin\") and \"api_token\" not in d' '$SB/org.pushed.json'"
 check "only lanes/ and org.json at the top" "[ \"\$(cut -d/ -f1 '$SB/tree.txt' | sort -u | tr '\n' ' ')\" = 'lanes org.json ' ]"

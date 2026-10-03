@@ -140,7 +140,8 @@ eval "$args" > "$SB/timer.out" 2>&1; rc=$?; check "the timer's own command ran (
 SBR=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('state_backup_branch','backup/lane-state'))" "$ORG/org.json")
 tree=$(git -C "$SB/origin.git" ls-tree -r --name-only "$SBR" 2>/dev/null)
 check "snapshot branch $SBR reached origin with lane recovery state" "printf '%s' \"\$tree\" | grep -q 'lanes/core/lane.json'"
-check "snapshot lacks prompts/, rounds/, owner-answers.md, context.md" "! printf '%s' \"\$tree\" | grep -qE '/(prompts|rounds)/|owner-answers.md|context.md'"
+check "snapshot carries each lane's goal (supervisor-brief.md, context.md)" "printf '%s' \"\$tree\" | grep -qx 'lanes/core/supervisor-brief.md' && printf '%s' \"\$tree\" | grep -qx 'lanes/core/context.md'"
+check "snapshot lacks prompts/, rounds/, owner-answers.md" "! printf '%s' \"\$tree\" | grep -qE '/(prompts|rounds)/|owner-answers.md'"
 bash "$ORG/lanes.sh" "$ORG" gc > "$SB/gc.out" 2>&1; rc=$?; check "gc ran (exit $rc)" "[ $rc = 0 ]"
 
 step "STOP"

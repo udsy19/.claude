@@ -108,7 +108,7 @@ A finding that should BIND becomes a decision: the supervisor or owner writes it
 | `lanes.sh` | Lane management: `new`, `start`, `restart` (keeps workers alive), `stop`, `status`, `gc` (hourly — launchd, crontab, a systemd user timer or tmux: merged, finished worktrees + build dirs, renders > 14 days). `start` resumes a stopped lane. |
 | `lane-metrics.py` | Per-lane, per-day consults, dispatches, finishes, missing reports, timeouts, merges, conflicts, lands, KILLs, NO ACTIONABLE BLOCKs, median dispatch→finish and dispatch→merge. |
 | `git-sync.sh` | Every 5 min: fast-forwards the `main` branch from origin (merging into HEAD only when HEAD is main, else `git fetch origin main:main`; never force; DIVERGED is logged), pushes main only if `sync.push_main` (default false), and pushes every work branch. |
-| `state-snapshot.sh` | Hourly: copies each lane's recovery state (`plan.md`, `lane-memory*.md`, `rulings.md`, `owner-questions.md`, `lane.json`, `loop-state.json`, `renders/owner` and `renders/latest`, plus anything in `state_backup.include`) and `org.json` without secret-shaped keys to branch `{{STATE_BRANCH}}`, and pushes it to origin — anyone who can read origin can read it. |
+| `state-snapshot.sh` | Hourly: copies each lane's recovery state (`plan.md`, `lane-memory*.md`, `rulings.md`, `owner-questions.md`, `lane.json`, `loop-state.json`, the lane's goal in `context.md` and `supervisor-brief.md`, `renders/owner` and `renders/latest`, plus anything in `state_backup.include`) and `org.json` without secret-shaped keys to branch `{{STATE_BRANCH}}`, and pushes it to origin — anyone who can read origin can read it. |
 | `lane-events.sh` | The overseer's event feed: dispatches, finishes, merges, landings and `REFUSED` blocks, owner questions, usage limits, `BUDGET`/`TOTAL`, `UNFILLED`, `SUPERVISOR ERROR`, and a worker-auth probe. |
 | `build-queue` | Machine-wide slots for heavy builds, so parallel workers don't starve the box. |
 
@@ -143,10 +143,9 @@ Each one happened in practice.
 2. Restore `{{ORG_ROOT}}/lanes/*` from branch `{{STATE_BRANCH}}`, and `org.json` from it with its
    secrets re-added.
 3. Run `bootstrap-host.sh` (remote: phase 1 as root, then phase 2 as the worker).
-4. The snapshot does not carry the lane briefs or the integration worktree: run
+4. The snapshot does not carry the integration worktree: run
    `lanes.sh new <lane> "<goal>" <parallel> <may_land>` for each lane with the values in its restored
-   `lane.json` (it rewrites `lane.json`, refills only missing files and re-creates `int/`), then refill
-   each `context.md` and the GOAL of `supervisor-brief.md` — or list those two in
-   `state_backup.include` beforehand so they are restored too.
+   `lane.json` (it rewrites `lane.json`, re-creates `int/`, and refills only missing or empty files, so the
+   restored `context.md` and `supervisor-brief.md` are kept).
 5. The owner re-does the logins.
 6. Run `lanes.sh start`.
