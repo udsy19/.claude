@@ -255,6 +255,10 @@ check "worker env: ORG_LANE, AGENT_ORG_HEADLESS, no ORG_ROLE" "grep -qx 'lane=s 
 check "supervisor env: ORG_ROLE=supervisor, AGENT_ORG_HEADLESS" "grep -qx 'role=supervisor headless=1' \"$SP/sup.env\""
 check "D7: no owner-rulings.md in the project: no heading, no error" "grep -q '^# CONSULT 1' \"$SP/seen-1.txt\" && ! grep -q \"project's standing rules\" \"$SP/seen-1.txt\""
 
+# ── org.example.json documents every key the host scripts read ──
+check "org.example.json: runtime remote, bin_dir, build_queue.real, state_backup.include, push_main false" \
+  "python3 -c \"import json,sys; d=json.load(open('$KIT/scripts/org.example.json')); assert d['runtime'] in ('local','remote') and d['bin_dir'] and d['build_queue']['real']=={} and d['state_backup']['include']==[] and d['sync']['push_main'] is False\""
+
 # ── B8: no GNU timeout; agents survive a loop restart and are adopted; a deadline kills the process group ──
 echo "== agent lifetime: restart adoption and deadlines"
 check "B8: supervise.py and the feed do not run GNU timeout" "! grep -nE '\"timeout\"|timeout [0-9]' $KIT/scripts/supervise.py $KIT/scripts/lane-events.sh"
