@@ -74,7 +74,7 @@ fresh_case() {
     set_mtime "$nf" $((de + note_offset))
   fi
   set_mtime "$T/vault/Missions/test-mission.md" $((de - 86400))
-  local out rc; out=$(ORG_MISSION=test-mission CLAUDE_PROJECT_DIR="$T" bash "$T/scripts/loop-guard.sh" 2>&1); rc=$?
+  local out rc; out=$(PATH="${CASE_PATH:-$PATH}" ORG_MISSION=test-mission CLAUDE_PROJECT_DIR="$T" bash "$T/scripts/loop-guard.sh" 2>&1); rc=$?
   local v="ok"
   [ "$rc" = "$want" ] || { v="MISMATCH (wanted exit $want)"; FAILED=$((FAILED + 1)); }
   if [ -n "$want_text" ] && ! printf '%s' "$out" | grep -q -- "$want_text"; then
@@ -88,6 +88,12 @@ echo "=== freshness: note vs LAST DISPATCH (not vs the mission file) ==="
 fresh_case "E  note after the mission, BEFORE the dispatch -> FIRE" -60 2 "STALE"
 fresh_case "F  note 60 s AFTER  the dispatch -> must be SILENT"  60  0 ""
 fresh_case "G  no note at all, dispatches exist -> must FIRE" none 2 ""
+# GNU `date` reads `-r` as a reference FILE, so `date -r <epoch>` fails on Linux. A stub that
+# behaves that way proves the message no longer depends on BSD date (it once said "written ,").
+GNU_DATE=$(mktemp -d); REAL_DATE=$(command -v date)
+printf '#!/bin/bash\nfor a in "$@"; do [ "$a" = -r ] && { echo "date: $2: No such file or directory" >&2; exit 1; }; done\nexec %s "$@"\n' "$REAL_DATE" > "$GNU_DATE/date"; chmod +x "$GNU_DATE/date"
+CASE_PATH="$GNU_DATE:$PATH" fresh_case "M  GNU date (no -r epoch) -> STALE still says HH:MM" -60 2 "STALE: written [0-9][0-9]:[0-9][0-9],"
+rm -rf "$GNU_DATE"
 
 # ─────────── SCOPE: the guard is silent when no mission is in force ───────────
 CASES=$((CASES + 1))

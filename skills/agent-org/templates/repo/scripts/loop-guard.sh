@@ -97,7 +97,10 @@ if [ -n "$note" ]; then
   # strictly-older only: a note written in the same second as a dispatch is fresh.
   [ "$note_epoch" -ge "$last_epoch" ] && clean
 fi
-logged=$([ -n "$note" ] && echo "1 (STALE: written $(date -r "$note_epoch" '+%H:%M' 2>/dev/null), before the last dispatch at $last_ts)" || echo 0)
+# The note's time comes from python3 too: `date -r <epoch>` is BSD-only (GNU reads `-r` as a
+# reference FILE), so on Linux the message said "written , before…".
+note_hm=$([ -n "$note" ] && python3 -c "import datetime as d,sys;print(d.datetime.fromtimestamp(int(sys.argv[1])).strftime('%H:%M'))" "$note_epoch" 2>/dev/null)
+logged=$([ -n "$note" ] && echo "1 (STALE: written $note_hm, before the last dispatch at $last_ts)" || echo 0)
 
 blocks=$(cat "$COUNTER" 2>/dev/null || echo 0)
 if [ "$blocks" -ge 3 ]; then clean; fi
