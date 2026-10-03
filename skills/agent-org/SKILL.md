@@ -56,8 +56,13 @@ This is `/setup`'s tier 3, the only copy of these questions. Skip what `setup.mj
    e.g. core product, quality, deliverables, UX, critique.
 6. **Owner rulings:** anything beyond the four defaults (goals-not-tests, vault-first, judged by real-product
    evidence, settings-not-questions). Which paths are owner-only? Any accounts or services that are
-   off-limits? Daily spend caps per lane (defaults: 100 consults, 40 agent starts, 48 agent-hours)?
-7. **What has NOT worked so far.** Ask this; it is what stops agents repeating history.
+   off-limits?
+7. **Daily spend caps per lane.** Options, default first: "Backstops only: 100 consults, 40 agent starts,
+   48 agent-hours (default)" / "Ones I'd notice: 30 consults, 10 agent starts, 12 agent-hours" / custom
+   numbers. Say why the default is only a backstop: it stops a runaway lane, not an expensive day. Whatever
+   the answer, write all three to `org.json` (`max_consults_per_day`, `max_agent_starts_per_day`,
+   `max_agent_hours_per_day`) so the numbers in force are the ones the owner can see and edit.
+8. **What has NOT worked so far.** Ask this; it is what stops agents repeating history.
 
 Then show a one-screen summary (lanes table, models, runtime, rules) and get a yes before writing anything.
 The installer records that yes: it writes the mission with `accepted-by: owner` (gate-independence law 9),

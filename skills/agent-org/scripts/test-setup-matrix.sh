@@ -172,6 +172,8 @@ orgrow() {  # orgrow <n> <local|vps> <claude|codex> <first|same|changed>
   fi
   eng "$B/run" "${envs[@]}" -- --scope org --install project --answers "$B/a.json" --bootstrap
   check "first run: exit 0, host ready ($runtime, as ${envs[2]#FAKE_USER=})" "[ $(rc "$B/run") = 0 ] && has '$B/run.out' 'host ready ($runtime, as ${envs[2]#FAKE_USER=})'" || tail -4 "$B/run.out"
+  [ "$n" = 1 ] && check "defaults accepted: org.json states the backstop caps 100/40/48" \
+    "python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));sys.exit(not(d[\"max_consults_per_day\"],d[\"max_agent_starts_per_day\"],d[\"max_agent_hours_per_day\"])==(100,40,48))' '$ORGR/org.json'"
   if [ "$n" = 1 ]; then commit_all; check "org install: org-board.sh exits 0 after the setup commit" "(cd \"\$P\" && bash scripts/gates/org-board.sh >'$B/board.out' 2>&1)" || tail -5 "$B/board.out"; fi
   [ "$sup" = codex ] && check "codex supervisor: login status probed" "has '$B/run.out' 'codex: Logged in (fake)'"
   [ "$rt" = local ] && check "local macOS: launchd agent, no crontab line" "ls '$HOME/Library/LaunchAgents/'agent-org.*.plist >/dev/null 2>&1 && [ ! -s '$SB/cron.tester' ]"
@@ -310,6 +312,17 @@ unset CLAUDE_VAULT_GATE_DIR
 row N11 "repo path with a space, in every scope"
 check "every base/vault/org row above ran in \"my proj\" and passed" "! grep -E '^\| (P|O)[0-9]+ ' '$RES' | grep -q '| FAIL |'"
 done_row PASS "rows P1–P12 and O1–O12 all use \"…/my proj\" and \"…/org root\""
+
+row N12 "budget answered: caps the owner would notice"
+box n12 fresh project; ans "$B/a.json" org project
+python3 - "$B/a.json" <<'PY'
+import json, sys
+a = json.load(open(sys.argv[1])); a["org"].update(max_consults_per_day=30, max_agent_starts_per_day=10, max_agent_hours_per_day=12)
+json.dump(a, open(sys.argv[1], "w"))
+PY
+eng "$B/run" FAKE_OS=Darwin FAKE_UID=501 FAKE_USER=tester -- --scope org --install project --answers "$B/a.json"
+check "exit 0, org.json carries 30/10/12" "[ $(rc "$B/run") = 0 ] && python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));sys.exit(not(d[\"max_consults_per_day\"],d[\"max_agent_starts_per_day\"],d[\"max_agent_hours_per_day\"])==(30,10,12))' '$ORGR/org.json'"
+done_row PASS "answers with caps 30/10/12 → exit 0, org.json max_consults/starts/hours = 30/10/12"
 
 row U1 "real Linux host: useradd, crontab -u, systemd --user + linger"
 done_row UNTESTABLE "stubbed here (no Linux VM); the Ubuntu CI job runs this script, still with the fakes — needs a real VPS"
