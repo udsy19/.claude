@@ -377,6 +377,14 @@ setorg "$O12/org.json" '{"max_agent_starts_per_day": 2}'; setorg "$L12/lane.json
 for _ in $(seq 1 150); do [ "$(grep -c 'finished rc=0' "$L12/lane.log" 2>/dev/null)" = 2 ] && break; sleep 0.2; done
 sleep 2; touch "$L12/STOP"; for _ in $(seq 1 50); do kill -0 $SP2 2>/dev/null || break; sleep 0.2; done; kill $SP2 2>/dev/null; wait $SP2 2>/dev/null
 check "D1: agent-start cap 2 — the third agent never starts; finished work is still committed" "has $L12/lane.log 'agent a1 (opus) start' && has $L12/lane.log 'agent a2 (opus) start' && ! has $L12/lane.log 'agent a3 (opus) start' && has $L12/lane.log 'BUDGET cap reached (starts 2/2)' && has $L12/lane.log 'agent a2 finished rc=0 report=present' && [ \$(grep -c '=== CONSULT' $L12/lane.log) = 1 ] && has $L12/lane.log 'supervisor loop exiting'"
+O14=$SB/org14; L14=$O14/lanes/ov   # a budget idle still flags overdue reports
+newlane "$O14" ov 120 '=== AGENT name=a1 model=opus ===\nx\n=== END AGENT ===\n=== AGENT name=hang model=opus ===\nx\n=== END AGENT ===\n'
+setorg "$O14/org.json" '{"max_consults_per_day": 1, "report_overdue_s": 6}'
+( cd "$L14" && ORG_ROOT=$O14 exec python3 "$O14/supervise.py" "$L14" 1 > "$SB/ov.out" 2>&1 ) & OP=$!
+for _ in $(seq 1 150); do has "$L14/lane.log" 'REPORT OVERDUE hang' && break; sleep 0.2; done
+touch "$L14/STOP"; for _ in $(seq 1 50); do kill -0 $OP 2>/dev/null || break; sleep 0.2; done; kill $OP 2>/dev/null; wait $OP 2>/dev/null
+pkill -f "$L14/wt/hang" 2>/dev/null
+check "D1: during a budget idle, an overdue report is still flagged" "b=\$(grep -n 'BUDGET cap reached' $L14/lane.log | head -1 | cut -d: -f1); o=\$(grep -n 'REPORT OVERDUE hang' $L14/lane.log | head -1 | cut -d: -f1); [ -n \"\$b\" ] && [ -n \"\$o\" ] && [ \"\$o\" -gt \"\$b\" ]"
 O13=$SB/org13; L13=$O13/lanes/ro
 newlane "$O13" ro 120
 printf '{"budget": {"day": "2000-01-01", "consults": 99, "starts": 99, "agent_s": 0, "tick": 0, "breached": ["consults"], "total_at": 0}}' > "$L13/loop-state.json"

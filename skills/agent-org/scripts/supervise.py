@@ -208,13 +208,14 @@ def over_budget(kind, running=()):
 
 def idle_until_rollover(running):
     """Spend guard: no consults and no agent starts until the UTC day changes or STOP. Running agents keep their
-    deadlines; the ones that finish meanwhile are committed as usual."""
+    deadlines; the ones that finish meanwhile are committed as usual, and overdue reports are still flagged."""
     day = today()
     while not stopped() and today() == day:
         done = [x for x in running if x[0].poll() is not None]
         if done:
             finish(done)
             running[:] = [x for x in running if x not in done]
+        watch_reports(running)
         spend(running)
         save_state()
         time.sleep(POLL_S)
