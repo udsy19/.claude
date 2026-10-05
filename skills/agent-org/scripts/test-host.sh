@@ -211,7 +211,7 @@ check "remote phase 2, no crontab: the worker's own systemd --user timer" "[ $(r
 ORG=$SB/org
 
 echo "== A5 snapshot: recovery state only, secrets stripped, pushed to origin"
-mkorg "{'api_token':'TOPSECRET-1','worker_env':{'PATH':'/usr/bin','ANTHROPIC_API_KEY':'TOPSECRET-2'},'supervisor':{'backend':'claude','model':'opus','Auth':'TOPSECRET-3'},'state_backup':{'include':['prompts']}}"
+mkorg "{'api_token':'TOPSECRET-1','worker_env':{'PATH':'/usr/bin','ANTHROPIC_API_KEY':'TOPSECRET-2'},'supervisor':{'backend':'claude','model':'opus','Auth':'TOPSECRET-3'},'state_backup':{'include':['prompts']},'auth_probe_interval_s':900,'mystery_setting':'x'}"
 L="$ORG/lanes/t"; mkdir -p "$L"/{prompts,rounds,reports,renders/owner,renders/latest,renders/old,wt/a1,logs}
 for f in plan.md lane-memory.md lane-memory.archive-20261001-0000.md rulings.md owner-questions.md lane.json loop-state.json \
          context.md owner-answers.md supervisor-brief.md agent-rules.md supervise.out lane.log prompts/0001-a1.md rounds/0001-supervisor.md \
@@ -230,6 +230,16 @@ check "pushed tree lacks prompts/, rounds/, reports/ (prompts dropped once no lo
 check "pushed tree lacks owner-answers.md, agent-rules.md, supervise.out, logs" "! grep -qE '^lanes/t/(owner-answers|agent-rules)\.md$|supervise\.out|lane\.log|/logs/' '$SB/tree.txt'"
 check "pushed tree lacks worktrees and unpinned renders" "! grep -qE '^lanes/t/(wt/|renders/old/)' '$SB/tree.txt'"
 check "pushed org.json: no secrets-shaped keys at any depth" "! grep -q TOPSECRET '$SB/org.pushed.json' && python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));assert d[\"repo\"] and d[\"worker_env\"]==dict(PATH=\"/usr/bin\") and \"api_token\" not in d' '$SB/org.pushed.json'"
+check "pushed org.json keeps auth_probe_interval_s (an allowlist, not a substring blocklist)" "python3 -c 'import json,sys;assert json.load(open(sys.argv[1]))[\"auth_probe_interval_s\"]==900' '$SB/org.pushed.json'"
+check "an unknown key is left out and named in the snapshot log" "python3 -c 'import json,sys;assert \"mystery_setting\" not in json.load(open(sys.argv[1]))' '$SB/org.pushed.json' && grep -q 'not backed up.*mystery_setting' '$SB/snap.out' && grep -q 'not backed up.*worker_env.ANTHROPIC_API_KEY' '$SB/snap.out'"
+check "every key org.example.json documents survives the allowlist" "python3 - '$SC/org.example.json' '$SC/state-snapshot.sh' <<'PYX'
+import json, re, subprocess, sys, tempfile, os
+ex = json.load(open(sys.argv[1])); src = open(sys.argv[2]).read()
+body = re.search(r\"<<'PY'\\n(.*?)\\nPY\\n\", src, re.S).group(1)
+d = tempfile.mkdtemp(); i, o = os.path.join(d, 'in.json'), os.path.join(d, 'out.json'); json.dump(ex, open(i, 'w'))
+subprocess.run([sys.executable, '-c', body, i, o], check=True, capture_output=True)
+assert json.load(open(o)) == ex, set(ex) ^ set(json.load(open(o)))
+PYX"
 check "only lanes/ and org.json at the top" "[ \"\$(cut -d/ -f1 '$SB/tree.txt' | sort -u | tr '\n' ' ')\" = 'lanes org.json ' ]"
 
 rm -rf "$ORG/state-wt"; echo more > "$L/plan.md"; bash "$SC/state-snapshot.sh" "$ORG" >> "$SB/snap.out" 2>&1

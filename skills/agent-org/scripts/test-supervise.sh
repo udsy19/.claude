@@ -338,7 +338,7 @@ mayland() { python3 -c "import json,sys; d=json.load(open(sys.argv[1])); d['may_
 O9=$SB/org9; L9=$O9/lanes/gate
 newlane "$O9" gate 120 '=== AGENT name=planner model=opus ===\nretune\n=== END AGENT ===\n' \
   '=== LAND branch=lane/gate/planner ===\n=== AGENT name=clean model=opus ===\nmeasure\n=== END AGENT ===\n' \
-  '=== LAND branch=lane/gate/clean ===\n'
+  '=== LAND branch=lane/gate/clean ===\n' '=== LAND branch=lane/gate/clean ===\n'
 mayland "$L9"
 grc=0; (cd "$L9" && ORG_ROOT=$O9 tmo 120 python3 "$O9/supervise.py" "$L9" 1 > "$SB/g.out" 2>&1) || grc=$?
 RF=$(ls "$L9"/reports/*-zz-land-refused-lane-gate-planner.md 2>/dev/null)
@@ -346,6 +346,7 @@ check "B3: a Plan.md change with no Authority: is refused (rc $grc)" "[ $grc = 0
 check "B3: the gate code is main's, not the candidate's (its neutered gate did not pass it)" "git -C $REPO show lane/gate/planner:scripts/gates/plan-ownership.mjs | grep -qx 'process.exit(0)' && grep -q 'PLAN-OWNERSHIP\\|Authority' '$RF'"
 check "B3: ...never merged: main does not carry the planner's commit" "! git -C $REPO merge-base --is-ancestor lane/gate/planner main"
 check "B3: a clean, justified candidate lands" "has $L9/lane.log 'LAND lane/gate/clean ok' && git -C $REPO merge-base --is-ancestor lane/gate/clean main"
+check "LAND of an already-landed branch: 'nothing to land', no second 'ok', the supervisor is told" "has $L9/lane.log 'LAND lane/gate/clean: nothing to land (already in main)' && [ \$(grep -c 'LAND lane/gate/clean ok' $L9/lane.log) = 1 ] && has $O9/seen-5.txt 'nothing to land'"
 check "B3: the refusal reaches the supervisor and the event feed" "has $O9/seen-3.txt 'LAND lane/gate/planner was refused' && grep -E \"\$EVENTS\" $L9/lane.log | grep -q 'LAND lane/gate/planner REFUSED'"
 O10=$SB/org10; L10=$O10/lanes/p
 newlane "$O10" p 120 '=== AGENT name=parker model=opus ===\nwork\n=== END AGENT ===\n' '=== LAND branch=lane/p/parker ===\n'
@@ -376,6 +377,14 @@ setorg "$O12/org.json" '{"max_agent_starts_per_day": 2}'; setorg "$L12/lane.json
 for _ in $(seq 1 150); do [ "$(grep -c 'finished rc=0' "$L12/lane.log" 2>/dev/null)" = 2 ] && break; sleep 0.2; done
 sleep 2; touch "$L12/STOP"; for _ in $(seq 1 50); do kill -0 $SP2 2>/dev/null || break; sleep 0.2; done; kill $SP2 2>/dev/null; wait $SP2 2>/dev/null
 check "D1: agent-start cap 2 — the third agent never starts; finished work is still committed" "has $L12/lane.log 'agent a1 (opus) start' && has $L12/lane.log 'agent a2 (opus) start' && ! has $L12/lane.log 'agent a3 (opus) start' && has $L12/lane.log 'BUDGET cap reached (starts 2/2)' && has $L12/lane.log 'agent a2 finished rc=0 report=present' && [ \$(grep -c '=== CONSULT' $L12/lane.log) = 1 ] && has $L12/lane.log 'supervisor loop exiting'"
+O14=$SB/org14; L14=$O14/lanes/ov   # a budget idle still flags overdue reports
+newlane "$O14" ov 120 '=== AGENT name=a1 model=opus ===\nx\n=== END AGENT ===\n=== AGENT name=hang model=opus ===\nx\n=== END AGENT ===\n'
+setorg "$O14/org.json" '{"max_consults_per_day": 1, "report_overdue_s": 6}'
+( cd "$L14" && ORG_ROOT=$O14 exec python3 "$O14/supervise.py" "$L14" 1 > "$SB/ov.out" 2>&1 ) & OP=$!
+for _ in $(seq 1 150); do has "$L14/lane.log" 'REPORT OVERDUE hang' && break; sleep 0.2; done
+touch "$L14/STOP"; for _ in $(seq 1 50); do kill -0 $OP 2>/dev/null || break; sleep 0.2; done; kill $OP 2>/dev/null; wait $OP 2>/dev/null
+pkill -f "$L14/wt/hang" 2>/dev/null
+check "D1: during a budget idle, an overdue report is still flagged" "b=\$(grep -n 'BUDGET cap reached' $L14/lane.log | head -1 | cut -d: -f1); o=\$(grep -n 'REPORT OVERDUE hang' $L14/lane.log | head -1 | cut -d: -f1); [ -n \"\$b\" ] && [ -n \"\$o\" ] && [ \"\$o\" -gt \"\$b\" ]"
 O13=$SB/org13; L13=$O13/lanes/ro
 newlane "$O13" ro 120
 printf '{"budget": {"day": "2000-01-01", "consults": 99, "starts": 99, "agent_s": 0, "tick": 0, "breached": ["consults"], "total_at": 0}}' > "$L13/loop-state.json"

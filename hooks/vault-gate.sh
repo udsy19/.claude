@@ -8,7 +8,7 @@
 # ORG_VAULT=off or a .claude/no-vault marker (that opt-out is logged once per session).
 # Docs: https://code.claude.com/docs/en/hooks (PreToolUse input: session_id, cwd; exit 2 blocks).
 #
-# State: one marker per session and repo under ${CLAUDE_VAULT_GATE_DIR:-$TMPDIR/claude-vault-gate-<uid>}.
+# State: one marker per session and repo under ${CLAUDE_VAULT_GATE_DIR:-$TMPDIR/claude-vault-gate-<uid>}, pruned after 7 days.
 # Dependencies: jq, git (degrades to a silent no-op without either).
 
 set -uo pipefail
@@ -23,6 +23,8 @@ TOP=$(git -C "${CLAUDE_PROJECT_DIR:-${CWD:-$PWD}}" rev-parse --show-toplevel 2>/
 
 STATE=${CLAUDE_VAULT_GATE_DIR:-${TMPDIR:-/tmp}/claude-vault-gate-$(id -u)}
 mkdir -p "$STATE" 2>/dev/null || exit 0
+# Markers older than a week go (as agent-contract.mjs prunes its own); the log stays. Best effort, never fatal.
+find "$STATE" -maxdepth 1 -type f ! -name vault-gate.log -mmin +10080 -exec rm -f {} + 2>/dev/null
 KEY=$(printf '%s|%s' "${SID:-nosession}" "$TOP" | cksum | cut -d' ' -f1)
 
 if [ "${ORG_VAULT:-}" = off ] || [ -e "$TOP/.claude/no-vault" ]; then

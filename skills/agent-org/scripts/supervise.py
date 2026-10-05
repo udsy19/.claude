@@ -172,6 +172,9 @@ def spend(running=()):
         b = ST["budget"] = {"day": today(), "consults": 0, "starts": 0, "agent_s": 0.0, "tick": time.time(),
                             "breached": [], "total_at": 0.0}
     t = time.time()
+    # Agent-hours tick only when spend() runs (each poll, idle tick and consult), charging the agents alive NOW for
+    # the whole interval: an agent that finished during a long consult is not charged for it. The figure
+    # undercounts, never overcounts — a backstop against a runaway lane, not an exact meter.
     b["agent_s"] += (t - b.get("tick", t)) * sum(1 for x in running if x[0].poll() is None)
     b["tick"] = t
     return b
@@ -208,13 +211,14 @@ def over_budget(kind, running=()):
 
 def idle_until_rollover(running):
     """Spend guard: no consults and no agent starts until the UTC day changes or STOP. Running agents keep their
-    deadlines; the ones that finish meanwhile are committed as usual."""
+    deadlines; the ones that finish meanwhile are committed as usual, and overdue reports are still flagged."""
     day = today()
     while not stopped() and today() == day:
         done = [x for x in running if x[0].poll() is not None]
         if done:
             finish(done)
             running[:] = [x for x in running if x not in done]
+        watch_reports(running)
         spend(running)
         save_state()
         time.sleep(POLL_S)
@@ -620,6 +624,13 @@ def land(br, rnd):
     head = git_out("git symbolic-ref --short -q HEAD")
     if head != MAIN_BR:         # a merge lands on whatever is checked out: only ever on main
         return refuse_land(br, rnd, f"{REPO} has {head or 'a detached HEAD'} checked out, not {MAIN_BR}")
+    if sh(f"cd {q(REPO)} && git merge-base --is-ancestor {q(br)} {q(MAIN_BR)}").returncode == 0:
+        # Already landed: the gates would all see an empty range (77) and the merge would say "Already up to date"
+        # with exit 0 — logging "ok" would teach the supervisor that re-landing is free.
+        log(f"LAND {br}: nothing to land (already in {MAIN_BR})")
+        ST["notes"].append(f"LAND {br}: nothing to land, it is already in {MAIN_BR}.")
+        save_state()
+        return
     ok, report = land_gates(br)
     if not ok:
         return refuse_land(br, rnd, "the landing gates failed", report)
