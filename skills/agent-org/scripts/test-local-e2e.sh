@@ -10,6 +10,8 @@ SB=$(mktemp -d "${TMPDIR:-/tmp}/local-e2e.XXXXXX"); SB=$(cd "$SB" && pwd -P)
 cleanup() { pkill -f "$SB" 2>/dev/null; if [ "${KEEP:-}" = 1 ]; then echo "sandbox kept: $SB"; else rm -rf "$SB"; fi; }
 trap cleanup EXIT
 export HOME="$SB/home"; mkdir -p "$HOME"
+# A sandboxed HOME hides the runner's git identity, and Linux git cannot auto-detect one: set it, as the matrix does.
+export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.invalid GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.invalid
 P="$SB/my proj"; ORG="$SB/org root"; F="$SB/fakes"; LOG="$SB/fake.log"; mkdir -p "$F"
 PASS=0; FAIL=0
 check() { if eval "$2"; then PASS=$((PASS+1)); echo "  ok   $1"; else FAIL=$((FAIL+1)); echo "  FAIL $1"; fi; }

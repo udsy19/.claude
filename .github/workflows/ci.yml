@@ -50,6 +50,12 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    # No identity auto-detection on any OS: a suite that sandboxes HOME must set its own git identity
+    # (Linux cannot auto-detect one; macOS can, which once hid this).
+    env:
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: user.useConfigOnly
+      GIT_CONFIG_VALUE_0: "true"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
