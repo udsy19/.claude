@@ -313,6 +313,12 @@ check "the gate script is installed where every gate row runs" "[ -f '$GATE_HOME
 row G6 "gate: repo with a vault"
 box g6 vault project; gate "$P" s7 A=1; check "silent, exit 0" "[ $(grc) = 0 ] && [ ! -s '$B/gate.err' ]"
 done_row PASS "exit 0, no stderr"
+row G8 "gate: markers older than a week are pruned, fresh ones and the log kept"
+touch "$CLAUDE_VAULT_GATE_DIR/vault-gate.log"; : > "$CLAUDE_VAULT_GATE_DIR/old-marker"; : > "$CLAUDE_VAULT_GATE_DIR/fresh-marker"
+python3 -c "import os,sys,time; t=time.time()-8*86400; os.utime(sys.argv[1],(t,t)); os.utime(sys.argv[2],(t,t))" "$CLAUDE_VAULT_GATE_DIR/old-marker" "$CLAUDE_VAULT_GATE_DIR/vault-gate.log"
+mkdir -p "$B/no vault" && git -C "$B/no vault" init -q; gate "$B/no vault" s9 A=1   # a repo without a vault: the path that writes markers
+check "8-day-old marker removed, fresh marker and vault-gate.log kept" "[ ! -e '$CLAUDE_VAULT_GATE_DIR/old-marker' ] && [ -e '$CLAUDE_VAULT_GATE_DIR/fresh-marker' ] && [ -e '$CLAUDE_VAULT_GATE_DIR/vault-gate.log' ]"
+done_row PASS "a gate call removes an 8-day-old marker; a fresh marker and the (old) log stay"
 row G7 "gate: inside this config repo itself"
 CONF_TOP=$(git -C "$KIT" rev-parse --show-toplevel)
 gate "$CONF_TOP" s8 A=1; check "the config repo ships .claude/no-vault: silent, exit 0" "[ -f '$CONF_TOP/.claude/no-vault' ] && [ $(grc) = 0 ] && [ ! -s '$B/gate.err' ]"
