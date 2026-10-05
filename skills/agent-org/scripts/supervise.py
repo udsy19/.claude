@@ -172,6 +172,9 @@ def spend(running=()):
         b = ST["budget"] = {"day": today(), "consults": 0, "starts": 0, "agent_s": 0.0, "tick": time.time(),
                             "breached": [], "total_at": 0.0}
     t = time.time()
+    # Agent-hours tick only when spend() runs (each poll, idle tick and consult), charging the agents alive NOW for
+    # the whole interval: an agent that finished during a long consult is not charged for it. The figure
+    # undercounts, never overcounts — a backstop against a runaway lane, not an exact meter.
     b["agent_s"] += (t - b.get("tick", t)) * sum(1 for x in running if x[0].poll() is None)
     b["tick"] = t
     return b

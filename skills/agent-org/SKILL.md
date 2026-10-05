@@ -66,7 +66,8 @@ verbatim:
    48 agent-hours (default)" / "Ones I'd notice: 30 consults, 10 agent starts, 12 agent-hours" / custom
    numbers. Say why the default is only a backstop: it stops a runaway lane, not an expensive day. Whatever
    the answer, write all three to `org.json` (`max_consults_per_day`, `max_agent_starts_per_day`,
-   `max_agent_hours_per_day`) so the numbers in force are the ones the owner can see and edit.
+   `max_agent_hours_per_day`) so the numbers in force are the ones the owner can see and edit. Agent-hours
+   are sampled by the loop and undercount (never overcount): a backstop, not a billing meter.
 8. **What has NOT worked so far.** Ask this; it is what stops agents repeating history. Default: "nothing
    recorded yet" (a new project).
 
