@@ -195,12 +195,14 @@ git -C "$L/int" merge -q --no-edit lane/t/beta
 mkdir -p "$L/target/alpha" "$L/target/beta"; head -c 200000 /dev/zero > "$L/target/alpha/blob"
 printf old > "$L/renders/beta/old.png"; touch -t 202601010000 "$L/renders/beta/old.png"
 printf old > "$L/renders/owner/old-owner.png"; touch -t 202601010000 "$L/renders/owner/old-owner.png"
-bash -c "cd $L/wt/beta && sleep 30" & DUMMY=$!     # beta looks "running" (same command shape as a live agent)
+# beta is "running": a live process named by its pid file, the way supervise.py records agents. Not a command-line
+# shape: bash 5 (Linux) execs the last command of `bash -c "cd <wt> && …"`, so no process shows "cd <wt>" there.
+sleep 30 & DUMMY=$!; mkdir -p "$L/pids"; echo "{\"pid\": $DUMMY}" > "$L/pids/beta.json"   # a bare process, as bash 5 leaves it
 sleep 0.5
 gcout=$(bash "$KIT/scripts/lanes.sh" "$ORG" gc t 2>&1)
 # shellcheck disable=SC2001  # indents every line of the output
 echo "$gcout" | sed 's/^/    /'
-kill $DUMMY 2>/dev/null; wait $DUMMY 2>/dev/null; pkill -f "cd $L/wt/beta && sleep" 2>/dev/null
+kill $DUMMY 2>/dev/null; wait $DUMMY 2>/dev/null; rm -f "$L/pids/beta.json"
 check "merged, finished worktrees removed (+ build dir)" "[ ! -d $L/wt/alpha ] && [ ! -d $L/wt/slowpoke ] && [ ! -d $L/target/alpha ]"
 check "running agent's worktree kept" "[ -d $L/wt/beta ] && echo \"\$gcout\" | grep -q 'keep wt/beta'"
 check "old renders pruned, owner renders kept" "[ ! -e $L/renders/beta/old.png ] && [ -e $L/renders/owner/old-owner.png ] && [ -e $L/renders/beta/beta.png ]"

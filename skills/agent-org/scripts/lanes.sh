@@ -15,6 +15,9 @@ CFG=$ORG_ROOT/org.json; KIT=$(cd "$(dirname "$0")" && pwd)
 j() { python3 -c "import json,sys;d=json.load(open(sys.argv[2]));print(eval(sys.argv[1]))" "$1" "$CFG"; }
 REPO=$(j 'd["repo"]'); MAIN=$(j 'd.get("main_branch","main")')
 all() { local d; for d in "$ORG_ROOT"/lanes/*/; do [ -d "$d" ] && basename "$d"; done; return 0; }
+# alive <pid file>: prints the agent's pid if supervise.py's pid file names a live process. The pid file is the
+# one record of a running agent: command lines are not (bash 5 execs the last command of `bash -c`, dropping "cd <wt>").
+alive() { local p; p=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["pid"])' "$1" 2>/dev/null) && kill -0 "$p" 2>/dev/null && echo "$p"; }
 named_or_all() { if [ $# -gt 0 ]; then printf '%s\n' "$@"; else all; fi; }   # lane names are [a-z0-9-]
 next_round() { local n; n=$(grep -oE "CONSULT [0-9]+" "$ORG_ROOT/lanes/$1/lane.log" 2>/dev/null | grep -oE "[0-9]+" | sort -n | tail -1); echo $(( ${n:-0} + 1 )); }
 start_one() { local k=$1 D=$ORG_ROOT/lanes/$1
@@ -49,9 +52,8 @@ PY
       start_one "$k"; done;;
   stop) touch "$ORG_ROOT/lanes/${1:?name}/STOP"; echo "STOP set for $1";;
   status) for k in $(all); do echo "== $k: $(tail -1 "$ORG_ROOT/lanes/$k/lane.log" 2>/dev/null)"; done
-    for f in "$ORG_ROOT"/lanes/*/pids/*.json; do   # supervise.py's pid file per agent: the authoritative list (prompts are stdin, not argv)
-      [ -f "$f" ] || continue; p=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["pid"])' "$f" 2>/dev/null) || continue
-      kill -0 "$p" 2>/dev/null && echo "running: $(basename "$(dirname "$(dirname "$f")")")/$(basename "$f" .json) (pid $p)"
+    for f in "$ORG_ROOT"/lanes/*/pids/*.json; do
+      [ -f "$f" ] && p=$(alive "$f") && echo "running: $(basename "$(dirname "$(dirname "$f")")")/$(basename "$f" .json) (pid $p)"
     done; true;;
   gc) for k in $(named_or_all "$@"); do D=$ORG_ROOT/lanes/$k
       P=$(python3 -c "import json,sys;d=json.load(open(sys.argv[1]));print(d.get('branch_prefix','lane/'+d['name']))" "$D/lane.json")
@@ -59,8 +61,7 @@ PY
       merged=$(cd "$REPO" && git branch --merged "$P/integration" --format='%(refname:short)')
       for w in "$D"/wt/*/; do [ -d "$w" ] || continue; n=$(basename "$w")
         echo "$merged" | grep -qxF "$P/$n" || continue
-        # supervise.py quotes a path that needs it, so match "cd <wt> &&" and "cd '<wt>' &&"
-        if pgrep -f "cd '?$D/wt/$n'? &&" >/dev/null; then echo "  keep wt/$n (agent running)"; continue; fi
+        if alive "$D/pids/$n.json" > /dev/null; then echo "  keep wt/$n (agent running)"; continue; fi
         (cd "$REPO" && git worktree remove --force "$w") && { rm -rf "$D/target/$n"; nw=$((nw+1)); echo "  removed wt/$n + target/$n"; }
       done
       nr=$(find "$D/renders" -type f -mtime +14 -not -path "$D/renders/owner/*" -print -delete 2>/dev/null | wc -l | tr -d ' ')
