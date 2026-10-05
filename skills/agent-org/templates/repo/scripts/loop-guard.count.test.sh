@@ -3,7 +3,7 @@
 # one tree once reported 2/2/2 for logs holding 0, 0 and 3. A harness that cannot be trusted
 # is worse than no harness.
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/loop-guard.sh"
-today=$(date +%Y-%m-%d)
+today=$(date +%Y-%m-%d); day_utc=$(date -u +%Y-%m-%d)   # notes: local date; the dispatch log: UTC, as usage-hook.sh writes it
 FAILED=0
 unset AGENT_NAME AGENT_ORG_HEADLESS   # a lane worker running this suite must not silence every case (case K tests that path)
 CASES=0
@@ -26,8 +26,8 @@ case_run() {
   printf -- '---\nstate: running\n---\n' > "$T/vault/Missions/test-mission.md"
   : > "$T/vault/_log/agents.jsonl"
   local i
-  i=0; while [ $i -lt "$nat" ]; do echo "{\"ts\":\"${today}T01:00:00Z\",\"agent\":\"bug-fixer\",\"session\":\"s\"}" >> "$T/vault/_log/agents.jsonl"; i=$((i+1)); done
-  i=0; while [ $i -lt "$nemp" ]; do echo "{\"ts\":\"${today}T02:00:00Z\",\"agent\":\"\",\"session\":\"s\"}" >> "$T/vault/_log/agents.jsonl"; i=$((i+1)); done
+  i=0; while [ $i -lt "$nat" ]; do echo "{\"ts\":\"${day_utc}T01:00:00Z\",\"agent\":\"bug-fixer\",\"session\":\"s\"}" >> "$T/vault/_log/agents.jsonl"; i=$((i+1)); done
+  i=0; while [ $i -lt "$nemp" ]; do echo "{\"ts\":\"${day_utc}T02:00:00Z\",\"agent\":\"\",\"session\":\"s\"}" >> "$T/vault/_log/agents.jsonl"; i=$((i+1)); done
   local out rc
   out=$(ORG_MISSION=test-mission CLAUDE_PROJECT_DIR="$T" bash "$T/scripts/loop-guard.sh" 2>&1); rc=$?
   local verdict="ok"
@@ -63,7 +63,7 @@ fresh_case() {
   # three vacuous cases that read as a falsification.
   local disp; disp=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
   if [ "$note_offset" != "none" ]; then
-    echo "{\"ts\":\"${today}T01:00:00Z\",\"agent\":\"bug-fixer\",\"session\":\"s\"}" > "$T/vault/_log/agents.jsonl"
+    echo "{\"ts\":\"${day_utc}T01:00:00Z\",\"agent\":\"bug-fixer\",\"session\":\"s\"}" > "$T/vault/_log/agents.jsonl"
     echo "{\"ts\":\"$disp\",\"agent\":\"bug-fixer\",\"session\":\"s\"}" >> "$T/vault/_log/agents.jsonl"
   else
     echo "{\"ts\":\"$disp\",\"agent\":\"bug-fixer\",\"session\":\"s\"}" > "$T/vault/_log/agents.jsonl"
@@ -95,12 +95,18 @@ GNU_DATE=$(mktemp -d); REAL_DATE=$(command -v date)
 printf '#!/bin/bash\nfor a in "$@"; do [ "$a" = -r ] && { echo "date: $2: No such file or directory" >&2; exit 1; }; done\nexec %s "$@"\n' "$REAL_DATE" > "$GNU_DATE/date"; chmod +x "$GNU_DATE/date"
 CASE_PATH="$GNU_DATE:$PATH" fresh_case "M  GNU date (no -r epoch) -> STALE still says HH:MM" -60 2 "STALE: written [0-9][0-9]:[0-9][0-9],"
 rm -rf "$GNU_DATE"
+# The log is UTC, notes are local: wherever the two dates differ (every evening west of UTC, every
+# morning east of it) a guard matching the log by LOCAL date found no dispatches and went silent.
+# At any moment at least one of these two zones has a date different from UTC's, so this is
+# deterministic around the clock.
+TZ=Etc/GMT+12 fresh_case "P  UTC-12: no note, dispatches exist -> must FIRE" none 2 ""
+TZ=Etc/GMT-14 fresh_case "Q  UTC+14: no note, dispatches exist -> must FIRE" none 2 ""
 
 # ─────────── SCOPE: the guard is silent when no mission is in force ───────────
 CASES=$((CASES + 1))
 T=$(mktemp -d); mkdir -p "$T/vault/_log" "$T/vault/Missions" "$T/scripts"; cp "$SRC" "$T/scripts/loop-guard.sh"
 printf -- '---\nstate: running\n---\n' > "$T/vault/Missions/test-mission.md"
-echo "{\"ts\":\"${today}T01:00:00Z\",\"agent\":\"builder\",\"session\":\"s\"}" > "$T/vault/_log/agents.jsonl"
+echo "{\"ts\":\"${day_utc}T01:00:00Z\",\"agent\":\"builder\",\"session\":\"s\"}" > "$T/vault/_log/agents.jsonl"
 rc=0; (unset ORG_MISSION; CLAUDE_PROJECT_DIR="$T" bash "$T/scripts/loop-guard.sh" >/dev/null 2>&1) || rc=$?
 v="ok"; [ "$rc" = "0" ] || { v="MISMATCH (wanted exit 0)"; FAILED=$((FAILED + 1)); }
 printf '%-52s exit=%s  %s\n' "H  ORG_MISSION unset -> must be SILENT" "$rc" "$v"

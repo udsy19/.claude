@@ -40,7 +40,9 @@ state=$(sed -n '1,/^---$/{s/^state:[[:space:]]*//p;}' "$MISSION" | head -1 | tr 
 
 # The session note must be at least as fresh as the last dispatch: the loop's trail is the
 # note, so a dispatch that happened after the note was last written is an unlogged dispatch.
-today=$(date +%Y-%m-%d)
+today=$(date +%Y-%m-%d)       # session notes are named with the local date (people name them)
+day_utc=$(date -u +%Y-%m-%d)  # the dispatch log is stamped in UTC (usage-hook.sh: jq `now|todate`): match it in UTC,
+                              # or from the evening on (wherever local and UTC dates differ) the guard finds nothing
 # COUNT THE DISPATCHES, NOT THE LINES.
 #
 # This once counted every line dated today: 239 when SEVEN real dispatches had happened,
@@ -56,8 +58,8 @@ today=$(date +%Y-%m-%d)
 # reads garbage. My first version of this fix had exactly that, and its own falsification
 # caught it: the four cases reported 7/233 correctly and then 2, 2, 2 for logs holding 0, 0
 # and 3 dispatches. Substitute the empty-file case explicitly instead of short-circuiting.
-lines=$(grep -c "\"ts\":\"$today" "$LOG" 2>/dev/null); lines=${lines:-0}
-attributed=$(grep "\"ts\":\"$today" "$LOG" 2>/dev/null | grep -cv '"agent":""'); attributed=${attributed:-0}
+lines=$(grep -c "\"ts\":\"$day_utc" "$LOG" 2>/dev/null); lines=${lines:-0}
+attributed=$(grep "\"ts\":\"$day_utc" "$LOG" 2>/dev/null | grep -cv '"agent":""'); attributed=${attributed:-0}
 unattributed=$((lines - attributed))
 # NOT a silent filter. If every stop today was unattributed, dispatches still happened and
 # this guard must still fire — it just cannot name them. Making a check ignore something
@@ -81,7 +83,7 @@ note=$(ls -t "$ROOT/vault/Sessions"/"$today"-*.md 2>/dev/null | head -1)
 # so ANY note written today satisfied it for the rest of the day, however many agents were
 # dispatched after it (measured: sixteen hours and eight passes of silence). The right
 # reference is the last attributed dispatch, which this script already reads.
-last_ts=$(grep "\"ts\":\"$today" "$LOG" 2>/dev/null | grep -v '"agent":""' | tail -1 |
+last_ts=$(grep "\"ts\":\"$day_utc" "$LOG" 2>/dev/null | grep -v '"agent":""' | tail -1 |
           sed -n 's/.*"ts":"\([^"]*\)".*/\1/p')
 if [ -n "$note" ]; then
   if [ -z "$last_ts" ]; then
