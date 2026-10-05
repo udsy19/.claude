@@ -121,8 +121,15 @@ for (const rel of walk(SRC)) {
     continue
   }
   if (dest === '.claude/settings.json') {
+    const raw = fs.readFileSync(to, 'utf8')
+    if (HAS_PH.test(raw)) {   // a half-filled template: merging into it would hide the placeholder under working hooks
+      console.error(`init-repo: ${dest} carries an unfilled ${raw.match(HAS_PH)[0]}; its hooks and env were NOT merged. Fill or remove it, then re-run.`)
+      process.exitCode = 1
+      kept.push(`${dest} (NOT merged)`)
+      continue
+    }
     let have, want
-    try { have = JSON.parse(fs.readFileSync(to, 'utf8')); want = JSON.parse(body.toString()) }
+    try { have = JSON.parse(raw); want = JSON.parse(body.toString()) }
     catch (e) {
       // Without these hooks the contract, loop guard and dispatch log are silently absent, and the
       // board does not test hooks, so it would still go green. Fail the install instead.

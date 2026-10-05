@@ -4,8 +4,8 @@
  *
  * Two jobs, both on Edit/Write:
  *
- *   1. OWNERSHIP. vault/Plan.md, vault/Roadmap.md, vault/Decisions/ and .claude/rules/
- *      belong to the supervisor and the owner (scripts/lib/protected-paths.mjs). A subagent
+ *   1. OWNERSHIP. vault/Plan.md, vault/Roadmap.md, vault/Decisions/, .claude/rules/ and
+ *      .claude/settings.json belong to the supervisor and the owner (scripts/lib/protected-paths.mjs). A subagent
  *      editing them is refused and told to use scripts/propose.mjs instead.
  *      `ORG_ROLE=supervisor` (or `owner`) lifts it.
  *
@@ -30,7 +30,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 // ONE declaration of the protected list, shared with scripts/gates/plan-ownership.mjs.
-import { AUTHORS, protectedHit } from '../lib/protected-paths.mjs'
+import { AUTHORS, protectedHit, workerOffLimitsHit } from '../lib/protected-paths.mjs'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = process.env.CLAUDE_PROJECT_DIR ||
@@ -65,6 +65,30 @@ function stringsIn(v, depth = 0, out = []) {
 const payloadStrings = target ? [target] : stringsIn(ev.tool_input)
 const role = String(process.env.ORG_ROLE || 'subagent').trim().toLowerCase()
 
+// ---- 0. lane processes --------------------------------------------------------
+// supervise.py starts every lane process with AGENT_ORG_HEADLESS=1; workers also carry
+// AGENT_NAME, and their sub-agents inherit both. The LANE SUPERVISOR is read-only: its
+// --tools allowlist gives it no write tool at all, and this refuses one anyway, so a changed
+// allowlist cannot quietly hand the judge a pen. (The overseer also runs as ORG_ROLE=supervisor,
+// but interactively, without AGENT_ORG_HEADLESS, so it is not caught here.)
+const headless = !!process.env.AGENT_ORG_HEADLESS
+if (headless && role === 'supervisor') {
+  process.stderr.write(`REFUSED — the lane supervisor is read-only. It plans, briefs and judges; workers write.
+Put what you wanted written into a worker's brief (=== AGENT ===) or ask the owner (=== ASK_OWNER ===).
+`)
+  process.exit(2)
+}
+if (headless || process.env.AGENT_NAME) {
+  const off = payloadStrings.map((t) => workerOffLimitsHit(t)).find(Boolean)
+  if (off) {
+    process.stderr.write(`REFUSED — ${off.path} is ${off.what}, and a lane worker does not write it.
+Your report is your trail: put what you learned there, and durable findings in vault/Reports/ or
+vault/Research/. The overseer keeps the session notes, Home.md, the registry and memory.
+`)
+    process.exit(2)
+  }
+}
+
 // ---- 1. ownership -----------------------------------------------------------
 if (!AUTHORS.includes(role)) {
   const hit = payloadStrings.map((t) => protectedHit(t)).find(Boolean)
@@ -73,7 +97,7 @@ if (!AUTHORS.includes(role)) {
 `REFUSED — ${hit.path} is ${hit.what}, and it is not yours to edit.
 
 You are running as role "${role}". Only the supervisor and the owner write the plan, the
-roadmap, the decisions and the rules; that is what stops five agents holding five different
+roadmap, the decisions, the rules and the hooks that enforce them; that is what stops five agents holding five different
 ideas of what the work is.
 
 PROPOSE it instead — this reaches the supervisor and is answered, not dropped:

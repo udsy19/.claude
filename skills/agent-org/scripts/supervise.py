@@ -15,11 +15,12 @@ Each consult, the supervisor reads its brief + context + plan + owner rulings (a
   === LEARN === … === END LEARN ===                        (appended to lane-memory.md: the supervisor's persistent memory)
   === DONE ===
 A consult with none of these is logged as NO ACTIONABLE BLOCK and quoted back in the next prompt.
-ROLLING: the supervisor is re-consulted whenever ANY agent finishes (no round barrier). A restarted loop
-ADOPTS agents still running (each agent runs under `timeout` in its own process group).
+ROLLING: the supervisor is re-consulted whenever ANY agent finishes (no round barrier). Each agent runs in its
+own session (process group) with a deadline kept in <LANE_ROOT>/pids/<name>.json; a restarted loop ADOPTS the
+agents still running from those files (no GNU `timeout`: macOS does not ship it).
 Stop: touch <LANE_ROOT>/STOP.
 """
-import datetime, glob, json, os, re, shlex, subprocess, sys, time
+import datetime, glob, json, os, pwd, re, shlex, signal, subprocess, sys, time
 
 LANE_ROOT = os.path.abspath(sys.argv[1]) if len(sys.argv) > 1 else os.getcwd()
 START_ROUND = int(sys.argv[2]) if len(sys.argv) > 2 else 1
@@ -36,10 +37,18 @@ INT = f"{R}/int"
 LOG = f"{R}/lane.log"
 MAX_PAR = int(LANE.get("max_parallel", 2))
 AGENT_TIMEOUT = int(ORG.get("agent_timeout_s", 8 * 3600))
+CONSULT_TIMEOUT = int(ORG.get("consult_timeout_s", 5400))
+SUPERVISOR_TOOLS = "Read,Grep,Glob,WebSearch,WebFetch"         # a Claude supervisor reads and researches, nothing else
 REPORT_OVERDUE_S = int(ORG.get("report_overdue_s", 90 * 60))   # a running agent with no report file after this: warn once
 POLL_S = int(ORG.get("poll_interval_s", 30))
 IDLE_WAIT_S = int(ORG.get("idle_wait_s", 1200))              # nothing running: wait this long for owner answers / changes
-WORKER_USER = ORG.get("worker_user")                       # None/"" = run workers as the current user
+USAGE_WAIT_S = int(ORG.get("usage_limit_wait_s", 1800))      # supervisor hit a usage limit: wait, then consult again
+LIMIT_RE = re.compile(r"usage limit|rate limit|quota|credit balance", re.I)
+# Spend guards, per lane per UTC day. On a breach the lane asks the owner and idles until midnight UTC or STOP.
+BUDGET = {"consults": int(ORG.get("max_consults_per_day", 100)),
+          "starts": int(ORG.get("max_agent_starts_per_day", 40)),
+          "agent_hours": float(ORG.get("max_agent_hours_per_day", 48))}
+WORKER_USER = ORG.get("worker_user") or ""                 # remote runtime: the ONE user that runs the whole org
 SUP = ORG["supervisor"]                                     # {"backend": "codex"|"claude", "model": ..., ...}
 MODELS = ORG["worker_models"]                               # {"opus": "claude-opus-5-5", "sonnet": "sonnet"}
 DEFAULT_MODEL = ORG.get("default_worker_model", next(iter(MODELS)))
@@ -66,6 +75,7 @@ IMAGE_MAX = 12                                                     # pinned (ren
 ACTION_RE = re.compile(r"^=== (PLAN|AGENT|MERGE|LAND|ASK_OWNER|LEARN|MEMORY_CONSOLIDATED|DONE|KILL)\b", re.M)
 UNFILLED_RE = re.compile(r"\{\{[A-Z][A-Z0-9_]*\}\}")
 HUB_RE = re.compile(r"^vault/(.+/)?(README|Map)\.md$")            # files scripts/vault-hubs.mjs generates
+NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,40}$")                 # agent names: they become paths and branch names
 
 
 def now():
@@ -83,6 +93,35 @@ def sh(cmd, **kw):
     return subprocess.run(cmd, shell=True, text=True, capture_output=True, **kw)
 
 
+def run_bounded(args, timeout, input=None, **kw):
+    """subprocess.run with a deadline that kills the WHOLE process group (a shell's children too), portably."""
+    p = subprocess.Popen(args, stdin=subprocess.PIPE if input is not None else subprocess.DEVNULL,
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True, **kw)
+    try:
+        out, err = p.communicate(input, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        killpg(p.pid)
+        out, err = p.communicate()
+        err += f"\n(killed after {timeout}s)"
+        p.returncode = 124
+    return subprocess.CompletedProcess(args, p.returncode, out, err)
+
+
+def killpg(pid, grace=10):
+    """TERM the process group, then KILL it if anything is left after `grace` seconds."""
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(pid, sig)
+        except (ProcessLookupError, PermissionError):
+            return
+        for _ in range(grace * 10):
+            try:
+                os.killpg(pid, 0)
+            except (ProcessLookupError, PermissionError):
+                return
+            time.sleep(0.1)
+
+
 def git_out(cmd, cwd=REPO):
     return sh(f"cd {q(cwd)} && {cmd}").stdout.strip()
 
@@ -93,13 +132,6 @@ def rd(p, default=""):
 
 def stopped():
     return os.path.exists(f"{R}/STOP")
-
-
-def as_worker(cmd):
-    """Prefix a shell command so it runs as the worker user (if configured)."""
-    if not WORKER_USER or WORKER_USER == os.environ.get("USER"):
-        return cmd
-    return f"sudo -u {WORKER_USER} -H {cmd}"
 
 
 def env_str(extra):
@@ -126,6 +158,68 @@ def save_state():
     os.replace(STATE + ".tmp", STATE)
 
 
+def today():
+    return f"{now():%Y-%m-%d}"
+
+
+def spend(running=()):
+    """Today's counters (reset at UTC midnight, logging the closing total), with running agents' time charged
+    up to now."""
+    b = ST.get("budget") or {}
+    if b.get("day") != today():
+        if b.get("day"):
+            log_total(b, closing=True)
+        b = ST["budget"] = {"day": today(), "consults": 0, "starts": 0, "agent_s": 0.0, "tick": time.time(),
+                            "breached": [], "total_at": 0.0}
+    t = time.time()
+    b["agent_s"] += (t - b.get("tick", t)) * sum(1 for x in running if x[0].poll() is None)
+    b["tick"] = t
+    return b
+
+
+def log_total(b, closing=False):
+    """D2: the running total for the day, in the lane log (lane-events.sh shows TOTAL lines)."""
+    log(f"TOTAL {b['day']}{' (closing)' if closing else ''}: consults {b['consults']}/{BUDGET['consults']}, "
+        f"agent starts {b['starts']}/{BUDGET['starts']}, agent hours {b['agent_s'] / 3600:.1f}/{BUDGET['agent_hours']:g}")
+    b["total_at"] = time.time()
+
+
+def over_budget(kind, running=()):
+    """True when today's `kind` cap ("consults" | "starts") or the agent-hours cap is reached. The first breach of
+    the day is logged and asked of the owner (owner-questions.md, like an ASK_OWNER block)."""
+    b = spend(running)
+    hit = [k for k, used in ((kind, b[kind]), ("agent_hours", b["agent_s"] / 3600)) if used >= BUDGET[k]]
+    if not hit:
+        return False
+    new = [k for k in hit if k not in b["breached"]]
+    if new:
+        b["breached"] += new
+        save_state()
+        what = ", ".join(f"{k} {b[k] if k != 'agent_hours' else round(b['agent_s'] / 3600, 1)}/{BUDGET[k]:g}" for k in new)
+        qn = (f"Budget cap reached for {b['day']} UTC ({what}). The lane is idle until 00:00 UTC. Raise the cap in "
+              f"org.json (max_consults_per_day / max_agent_starts_per_day / max_agent_hours_per_day) and restart "
+              f"the lane, or let it resume tomorrow.")
+        with open(f"{R}/owner-questions.md", "a") as f:
+            f.write(f"\n## Budget ({now():%Y-%m-%d %H:%M} UTC)\n{qn}\n")
+        log(f"BUDGET cap reached ({what}) — ASK_OWNER: {qn}")
+        log_total(b)
+    return True
+
+
+def idle_until_rollover(running):
+    """Spend guard: no consults and no agent starts until the UTC day changes or STOP. Running agents keep their
+    deadlines; the ones that finish meanwhile are committed as usual."""
+    day = today()
+    while not stopped() and today() == day:
+        done = [x for x in running if x[0].poll() is not None]
+        if done:
+            finish(done)
+            running[:] = [x for x in running if x not in done]
+        spend(running)
+        save_state()
+        time.sleep(POLL_S)
+
+
 MEMORY = f"{R}/lane-memory.md"            # the supervisor's own persistent, append-only memory (LEARN journal)
 MEMORY_TAIL_BYTES = int(ORG.get("lane_memory_tail_bytes", 15000))
 CONSOLIDATE_EVERY = int(ORG.get("lane_memory_consolidate_every", 25))
@@ -145,15 +239,23 @@ def memory_tail():
 
 
 # ── prompt sections ──────────────────────────────────────────────────────────────────────────────────
+def project_rulings():
+    """The project's standing rulings (.claude/rules/owner-rulings.md, versioned and protected). Claude sessions
+    auto-load .claude/rules; a codex supervisor does not, so every consult carries them. Absent: nothing."""
+    text = rd(f"{REPO}/.claude/rules/owner-rulings.md").strip()
+    return f"\n## Owner rulings: the project's standing rules ({REPO}/.claude/rules/owner-rulings.md, binding)\n{text}\n" if text else ""
+
+
 def owner_block():
-    """rulings.md (curated current law) in full + the newest raw owner-answers entries. Without rulings.md
-    (lanes created before it existed) the whole owner-answers.md, as before."""
+    """The project's standing rulings, then rulings.md (this lane's curated law) in full + the newest raw
+    owner-answers entries. Without rulings.md (lanes created before it existed) the whole owner-answers.md."""
     raw = rd(f"{R}/owner-answers.md", "(none)")
     if not os.path.exists(f"{R}/rulings.md"):
-        return f"\n## Owner answers (binding)\n{raw}\n"
+        return project_rulings() + f"\n## Owner answers (binding)\n{raw}\n"
     entries = re.split(r"(?m)^(?=## )", raw)[1:]          # [0] is the file's preamble
     recent = entries[-OWNER_ANSWERS_RECENT:]
-    return (f"\n## Owner rulings: the current law (binding; curated by the overseer)\n{rd(f'{R}/rulings.md')}\n"
+    return (project_rulings()
+            + f"\n## Owner rulings: the current law (binding; curated by the overseer)\n{rd(f'{R}/rulings.md')}\n"
             f"\n## Owner answers: the newest {len(recent)} of {len(entries)} raw entries (full log: {R}/owner-answers.md)\n"
             + "".join(recent) + "\n")
 
@@ -202,35 +304,41 @@ def consult(prompt, out, cwd, images=()):
                 "-c", f'model_reasoning_effort="{SUP.get("effort", "high")}"', "-C", cwd, "-"]
             for img in images:
                 args += ["-i", img]
-            p = subprocess.run(["timeout", "5400"] + args, input=prompt, text=True, capture_output=True)
+            p = run_bounded(args, CONSULT_TIMEOUT, input=prompt)
         elif SUP["backend"] == "script":  # TEST-ONLY (scripts/test-supervise.sh): canned output, prompt on stdin, no model
             p = subprocess.run(["bash", SUP["command"]], input=full, text=True, capture_output=True, cwd=cwd,
                                env={**os.environ, **HEADLESS_ENV, "ORG_ROLE": "supervisor"})
         else:  # claude as a read-only supervisor: it may read, search and research, never edit
-            cmd = (f"cd {q(cwd)} && {q(CLAUDE)} -p {q(full)} --model {q(SUP['model'])} "
-                   f"--disallowedTools Edit,Write,NotebookEdit,Monitor --dangerously-skip-permissions")
-            p = subprocess.run(["timeout", "5400", "bash", "-c",
-                                as_worker(f"env {env_str({'ORG_ROLE': 'supervisor'})} bash -c {q(cmd)}")],
-                               text=True, capture_output=True)
+            # The whole prompt goes on stdin with NO prompt argument: `claude -p` then reads stdin as the prompt.
+            # (stdin + a `-p "…"` argument is read as attachment content, which overflowed the context at 300 KiB,
+            # and one argv string is capped at 128 KiB on Linux.)
+            # Read-only by ALLOWLIST: --tools restricts the built-in set (--allowedTools would only pre-approve);
+            # naming Glob/Grep brings them back on macOS/Linux; --tools does not cover MCP tools, so deny those.
+            cmd = (f"cd {q(cwd)} && {q(CLAUDE)} -p --model {q(SUP['model'])} --tools {SUPERVISOR_TOOLS} "
+                   f"--disallowedTools 'mcp__*' --dangerously-skip-permissions")
+            p = run_bounded(["bash", "-c", f"env {env_str({'ORG_ROLE': 'supervisor'})} bash -c {q(cmd)}"], CONSULT_TIMEOUT,
+                            input=full + "\n\nFollow the supervisor brief at the top of this prompt verbatim: emit your blocks now.\n")
         text = p.stdout
         open(out, "w").write(text)
         open(out + ".err", "w").write(p.stderr)
-        if re.search(r"usage limit|rate limit|quota|credit balance", p.stderr + text, re.I) and len(text) < 2000:
-            log("supervisor hit a usage limit — waiting 30 min")
-            for _ in range(60):
+        # A limit is the CLI's complaint (stderr, or a failed exit), never a word in a normal reply
+        if LIMIT_RE.search(p.stderr) or (p.returncode != 0 and LIMIT_RE.search(text)):
+            log(f"supervisor hit a usage limit — waiting {USAGE_WAIT_S // 60} min")
+            for _ in range(max(1, USAGE_WAIT_S // POLL_S)):
                 if stopped():
                     return ""
-                time.sleep(30)
+                time.sleep(POLL_S)
             continue
         return text
 
 
 # ── workers ──────────────────────────────────────────────────────────────────────────────────────────
 def claude_cmd(model, prompt_file, cwd, env_extra, cont=False):
+    """The prompt FILE is the agent's stdin and there is no prompt argument (see consult()): no argv size limit."""
     c = "--continue " if cont else ""
-    inner = (f"cd {q(cwd)} && env {env_str(env_extra)} {q(CLAUDE)} -p {c}\"$(cat {q(prompt_file)})\" "
-             f"--dangerously-skip-permissions --model {q(MODELS[model])} --disallowedTools Monitor")
-    return as_worker(f"bash -c {q(inner)}")
+    inner = (f"cd {q(cwd)} && env {env_str(env_extra)} {q(CLAUDE)} -p {c}"
+             f"--dangerously-skip-permissions --model {q(MODELS[model])} --disallowedTools Monitor < {q(prompt_file)}")
+    return f"bash -c {q(inner)}"
 
 
 def worktree(name, base):
@@ -240,10 +348,12 @@ def worktree(name, base):
         if r.returncode:
             log(f"worktree {name} from {base} FAILED: {r.stderr.strip()[:300]}")
             return None
-        for src in ORG.get("worktree_links", []):          # e.g. node_modules, .env files (copied, never committed)
+        for src in ORG.get("worktree_links", []):          # e.g. node_modules, .env files: shared, never committed
+            # Only IGNORED paths: a link to a tracked path would let a worker write the main checkout's files.
+            if sh(f"cd {q(REPO)} && git check-ignore -q -- {q(src)}").returncode:
+                log(f"worktree_links: skipped {src!r} for {name} — not ignored by git in {REPO}")
+                continue
             sh(f"ln -sfn {q(f'{REPO}/{src}')} {q(f'{wt}/{src}')} 2>/dev/null")
-        if WORKER_USER:
-            sh(f"chown -R {WORKER_USER}:{WORKER_USER} {q(wt)} {q(REPO + '/.git')} 2>/dev/null")
     return wt
 
 
@@ -259,7 +369,8 @@ def run_agent(name, model, base, brief, rnd):
                         + f"\n\n# YOUR BRIEF (supervisor, consult {rnd})\n\nYou are agent `{name}` in worktree `{wt}` "
                         f"on branch `{PREFIX}/{name}`.\n\n{brief}\n\n**Write your report to `{report}`, opening with "
                         f"`## TL;DR` (at most 10 lines).** Images the supervisor should see go in `{renders}/` (PNG; "
-                        "only images newer than its last consult are shown to it).\n")
+                        "only images newer than its last consult are shown to it).\n\n"
+                        "Follow the brief above verbatim, starting now.\n")
     rf = f"{R}/prompts/{rnd:04d}-{name}.resume.md"
     open(rf, "w").write("You were interrupted — your process exits whenever you end your turn. Continue your brief "
                         f"from where you stopped, running every command in the FOREGROUND. Do not stop until {report} "
@@ -268,16 +379,16 @@ def run_agent(name, model, base, brief, rnd):
     if ORG.get("per_agent_build_dir"):
         env[ORG["per_agent_build_dir"]] = f"{R}/target/{name}"
         os.makedirs(env[ORG["per_agent_build_dir"]], exist_ok=True)
-    for d in ("reports", "prompts", "logs", "target", f"renders/{name}"):
-        if WORKER_USER:
-            sh(f"chown -R {WORKER_USER}:{WORKER_USER} {q(f'{R}/{d}')}")
     agent_log = f"{R}/logs/{rnd:04d}-{name}.log"
-    # adopt_running() parses this command line back: keep the "cd <wt> " and "[ -s <report> ]" shapes
+    # lanes.sh gc spots a running agent by the leading "cd <wt> &&": keep that shape
     script = (f"cd {q(wt)} && {claude_cmd(model, pf, wt, env)} > {q(agent_log)} 2>&1; "
               f"for n in 1 2 3; do [ -s {q(report)} ] && break; "
               f"{claude_cmd(model, rf, wt, env, cont=True)} >> {q(agent_log)} 2>&1; done")
     log(f"agent {name} ({model}) start on {base}")
-    return subprocess.Popen(["timeout", str(AGENT_TIMEOUT), "bash", "-c", script]), report, name
+    p = subprocess.Popen(["bash", "-c", script], stdin=subprocess.DEVNULL, start_new_session=True)
+    a = Agent(name, p.pid, time.time() + AGENT_TIMEOUT, p)
+    write_pidfile(name, a, report)
+    return a, report, name
 
 
 def finish(procs):
@@ -286,47 +397,79 @@ def finish(procs):
         wt = f"{R}/wt/{name}"
         cenv = " ".join(f"{k}={q(v)}" for k, v in COMMIT_ENV.items())
         msg = q(f"{PREFIX} {name}: uncommitted agent work (safety net)")
-        sh(as_worker("bash -c " + q(f"cd {q(wt)} && git add -A && env {cenv} git commit --no-verify -q -m {msg}")))
-        sh(as_worker("bash -c " + q(f"cd {q(wt)} && git push -q origin {q(f'HEAD:refs/heads/{PREFIX}/{name}')}")))
-        log(f"agent {name} finished rc={p.returncode} report={'present' if os.path.exists(report) else 'MISSING'}")
+        sh(f"cd {q(wt)} && git add -A && env {cenv} git commit --no-verify -q -m {msg}")
+        sh(f"cd {q(wt)} && git push -q origin {q(f'HEAD:refs/heads/{PREFIX}/{name}')}")
+        rc = "?" if p.returncode is None else p.returncode         # None: it ended while the loop was down
+        log(f"agent {name} finished rc={rc} report={'present' if os.path.exists(report) else 'MISSING'}")
+        for f in (f"{R}/pids/{name}.json",):
+            if os.path.exists(f):
+                os.remove(f)
         FINISHED.append(name)
         if name in ST["overdue"]:
             ST["overdue"].remove(name)
             save_state()
 
 
-class Adopted:
-    def __init__(self, pid):
-        self.pid, self.returncode = pid, None
+class Agent:
+    """A worker's process group (its pid is the group id: start_new_session=True) and its deadline. `proc` is the
+    Popen this loop started; an ADOPTED agent (started by a previous loop) has none and is polled by pid."""
+    def __init__(self, name, pid, deadline, proc=None):
+        self.name, self.pid, self.deadline, self.proc, self.returncode = name, pid, deadline, proc, None
 
     def poll(self):
         if self.returncode is None:
-            try:
-                os.kill(self.pid, 0)
-            except ProcessLookupError:
-                self.returncode = 0
-            except PermissionError:
-                pass
+            if self.proc:
+                self.returncode = self.proc.poll()
+            elif not alive(self.pid):
+                self.returncode = "?"                             # not our child: its exit status is unknowable
+            if self.returncode is None and time.time() > self.deadline:
+                log(f"agent {self.name} TIMED OUT (deadline passed) — terminating its process group")
+                self.terminate()
+                self.returncode = 124                              # timeout(1)'s code: lane-metrics counts it
         return self.returncode
 
     def terminate(self):
-        try:
-            os.kill(self.pid, 15)
-        except ProcessLookupError:
-            pass
+        killpg(self.pid)
+        if self.proc:
+            self.proc.wait()
+
+
+def alive(pid):
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+
+
+def write_pidfile(name, a, report):
+    os.makedirs(f"{R}/pids", exist_ok=True)
+    open(f"{R}/pids/{name}.json", "w").write(json.dumps({"pid": a.pid, "deadline": a.deadline, "report": report}))
 
 
 def adopt_running():
-    out = []
-    for pid in sh(f"pgrep -f {q(f'timeout [0-9]+ bash -c cd .?{R}/wt/')}").stdout.split():
-        cmd = sh(f"ps -ww -o args= -p {pid}").stdout.strip()      # ps, not /proc: macOS has no /proc
-        if not cmd:
+    """Agents a previous loop started, from their pid files. A live pid whose command line is not this lane's
+    agent (the pid was reused) is not adopted; an agent that ended while the loop was down is finished now."""
+    out, gone = [], []
+    for f in sorted(glob.glob(f"{R}/pids/*.json")):
+        name = os.path.basename(f)[:-5]
+        try:
+            d = json.load(open(f))
+        except (OSError, ValueError):
+            os.remove(f)
             continue
-        m = re.search(rf"cd '?{re.escape(R)}/wt/([^/' ]+)'? ", cmd)
-        rp = re.search(r"\[ -s ('[^']*'|\S+) \]", cmd)
-        if m and cmd.startswith("timeout"):
-            out.append((Adopted(int(pid)), rp.group(1).strip("'") if rp else "", m.group(1)))
-            log(f"adopted running agent {m.group(1)} (pid {pid})")
+        a = Agent(name, int(d["pid"]), float(d["deadline"]))
+        cmd = sh(f"ps -ww -o args= -p {a.pid}").stdout              # ps, not /proc: macOS has no /proc
+        if alive(a.pid) and f"{R}/wt/{name}" in cmd:
+            out.append((a, d["report"], name))
+            log(f"adopted running agent {name} (pid {a.pid})")
+        else:
+            a.returncode = "?"
+            gone.append((a, d["report"], name))
+    if gone:
+        finish(gone)
     return out
 
 
@@ -414,8 +557,88 @@ def merge(cwd, br, msg, why):
     return r
 
 
+def valid_ref(ref):
+    """A branch/base the supervisor named: never an option, never a revision expression, a legal branch name."""
+    return (not ref.startswith("-") and "@{" not in ref
+            and sh(f"cd {q(REPO)} && git check-ref-format --branch {q(ref)}").returncode == 0)
+
+
+def refuse_block(what, why):
+    """The supervisor's output is untrusted input: an invalid block is dropped, logged, and quoted back to it."""
+    log(f"REFUSED {what}: {why}")
+    ST["notes"].append(f"Your block `{what}` was refused ({why}); nothing was done for it.")
+    save_state()
+
+
+LAND_GATES = (("plan-ownership", ["node", "scripts/gates/plan-ownership.mjs", "--since", "{base}"]),
+              ("sprawl", ["node", "scripts/gates/sprawl.mjs", "--base", "{base}", "--tip", "HEAD"]),
+              ("protected-paths", ["node", "scripts/gates/protected-paths.mjs"]))
+
+
+def land_gates(br):
+    """Run the landing gates on the candidate. The gate CODE comes from main (a branch cannot weaken the gate that
+    judges it); the content and history are the candidate's. Returns (ok, report). Exit 0 passes, 77 is an empty
+    range (nothing to land), anything else refuses."""
+    missing = [g for g, a in LAND_GATES if sh(f"cd {q(REPO)} && git cat-file -e {q(f'{MAIN_BR}:{a[1]}')}").returncode]
+    if missing:
+        return False, f"the landing gates are not on {MAIN_BR} ({', '.join(missing)}): install the agent-org repo layer first"
+    base = git_out(f"git merge-base {q(MAIN_BR)} {q(br)}")
+    if not base:
+        return False, f"{br} shares no history with {MAIN_BR}"
+    tmp = f"{R}/land-tmp"
+    sh(f"cd {q(REPO)} && (git worktree remove --force {q(tmp)}; rm -rf {q(tmp)}; git worktree prune) 2>/dev/null")
+    if sh(f"cd {q(REPO)} && git worktree add -q --detach {q(tmp)} {q(br)}").returncode:
+        return False, f"could not check out {br} to grade it"
+    try:
+        sh(f"cd {q(tmp)} && git checkout -q {q(MAIN_BR)} -- scripts/gates scripts/lib")
+        env = {**os.environ, "ORG_MAIN_BRANCH": MAIN_BR}
+        out, ok = [], True
+        for g, args in LAND_GATES:
+            r = subprocess.run([a.format(base=base) for a in args], cwd=tmp, env=env, text=True, capture_output=True)
+            passed = r.returncode in (0, 77)
+            ok &= passed
+            tail = "\n".join((r.stdout + r.stderr).strip().splitlines()[-12:])
+            out.append(f"### {g}: exit {r.returncode} ({'pass' if passed else 'FAIL'})\n```\n{tail}\n```")
+        return ok, "\n\n".join(out)
+    finally:
+        sh(f"cd {q(REPO)} && git worktree remove --force {q(tmp)}")
+
+
+def refuse_land(br, rnd, why, detail=""):
+    """A refused landing is logged, written where the supervisor and the overseer read, and never merged."""
+    log(f"LAND {br} REFUSED — {why}")
+    open(f"{R}/reports/{rnd:04d}-zz-land-refused-{br.replace('/', '-')}.md", "w").write(
+        f"# LAND of {br} on {MAIN_BR} REFUSED (consult {rnd})\n\n{why}\n\n{detail}\n")
+    ST["notes"].append(f"LAND {br} was refused: {why}. See reports/{rnd:04d}-zz-land-refused-{br.replace('/', '-')}.md.")
+    save_state()
+
+
+def land(br, rnd):
+    if not LANE.get("may_land"):
+        log(f"LAND {br} REFUSED — this lane may not land on main")
+        return
+    head = git_out("git symbolic-ref --short -q HEAD")
+    if head != MAIN_BR:         # a merge lands on whatever is checked out: only ever on main
+        return refuse_land(br, rnd, f"{REPO} has {head or 'a detached HEAD'} checked out, not {MAIN_BR}")
+    ok, report = land_gates(br)
+    if not ok:
+        return refuse_land(br, rnd, "the landing gates failed", report)
+    r = merge(REPO, br, f"{PREFIX}: land {br} on {MAIN_BR} (consult {rnd})\n\nAuthority: supervisor",
+              f"LAND {br} on {MAIN_BR} (consult {rnd})")
+    if r.returncode:
+        sh(f"cd {q(REPO)} && git merge --abort")
+        log(f"LAND {br} CONFLICT — aborted, main untouched")
+    else:
+        log(f"LAND {br} ok ({git_out('git rev-parse --short HEAD')})")
+
+
 # ── main loop ────────────────────────────────────────────────────────────────────────────────────────
 def main():
+    # One user runs the whole org (remote: worker_user; local: the owner). No user switching: refuse instead.
+    me = pwd.getpwuid(os.getuid()).pw_name
+    if WORKER_USER and WORKER_USER != me:
+        log(f"REFUSED to start: this lane runs as worker_user {WORKER_USER!r}, not {me!r} — start it as that user")
+        sys.exit(2)
     for d in ("reports", "prompts", "logs", "rounds", "wt", "target", "renders/owner"):
         os.makedirs(f"{R}/{d}", exist_ok=True)
     # An empty or placeholder-filled brief would be sent to the supervisor as content: refuse instead.
@@ -428,6 +651,9 @@ def main():
     rnd = START_ROUND
     running, pending, candidates = adopt_running(), [], []
     while not stopped():
+        if over_budget("consults", running):
+            idle_until_rollover(running)
+            continue
         reports = sorted(glob.glob(f"{R}/reports/*.md"), key=report_key)
         newest = reports[-6:]
         sh(f"cd {q(INT)} && git checkout -q {q(INT_BR)} 2>/dev/null; git reset -q --hard {q(INT_BR)}")
@@ -453,6 +679,11 @@ def main():
         imgs = images(ST["last_consult"])
         ST["last_consult"] = time.time()
         FINISHED.clear()
+        save_state()
+        b = spend(running)
+        b["consults"] += 1
+        if time.time() - b.get("total_at", 0) >= 3600:
+            log_total(b)
         save_state()
         log(f"=== CONSULT {rnd}: supervisor planning ({len(reports)} reports, {len(imgs)} images, {len(prompt)} chars)")
         out = consult(prompt, f"{R}/rounds/{rnd:04d}-supervisor.md", INT, imgs)
@@ -484,9 +715,16 @@ def main():
                 f.write(f"\n## Consult {rnd} ({now():%Y-%m-%d %H:%M} UTC)\n{qn}\n")
             log(f"ASK_OWNER: {qn[:200].replace(chr(10), ' ')}")
         for n in re.findall(r"=== KILL name=(\S+) ===", out):
+            if not NAME_RE.match(n):
+                refuse_block(f"KILL name={n}", "a name is 1-41 of a-z 0-9 -, starting alphanumeric")
+                continue
             kill_agent(n, running, pending)
-        merges = re.findall(r"=== MERGE branch=(\S+) ===", out)
-        lands = re.findall(r"=== LAND branch=(\S+) ===", out)
+        merges, lands = [], []
+        for kind, br in re.findall(r"=== (MERGE|LAND) branch=(\S+) ===", out):
+            if not valid_ref(br):
+                refuse_block(f"{kind} branch={br}", "not a legal branch name (git check-ref-format --branch)")
+                continue
+            (merges if kind == "MERGE" else lands).append(br)
         candidates = merges + lands
         for br in merges:
             r = merge(INT, br, f"{PREFIX}: merge {br} (consult {rnd})", f"MERGE {br} into {INT_BR} (consult {rnd})")
@@ -499,30 +737,34 @@ def main():
                 sh(f"cd {q(INT)} && git push -q origin {q(INT_BR)}")
                 log(f"MERGE {br} ok")
         for br in lands:
-            if not LANE.get("may_land"):
-                log(f"LAND {br} REFUSED — this lane may not land on main")
-                continue
-            r = merge(REPO, br, f"{PREFIX}: land {br} on {MAIN_BR} (consult {rnd})\n\nAuthority: supervisor",
-                      f"LAND {br} on {MAIN_BR} (consult {rnd})")
-            if r.returncode:
-                sh(f"cd {q(REPO)} && git merge --abort")
-                log(f"LAND {br} CONFLICT — aborted, main untouched")
-            else:
-                log(f"LAND {br} ok ({git_out('git rev-parse --short HEAD')})")
+            land(br, rnd)
         if re.search(r"^=== DONE ===", out, re.M):
             log("supervisor declared DONE")
             break
         for n, mdl, base, b in re.findall(r"=== AGENT name=(\S+) model=(\S+)(?: base=(\S+))? ===\n(.*?)\n=== END AGENT ===", out, re.S):
+            if not NAME_RE.match(n):
+                refuse_block(f"AGENT name={n}", "a name is 1-41 of a-z 0-9 -, starting alphanumeric")
+                continue
+            if base and not valid_ref(base):
+                refuse_block(f"AGENT name={n} base={base}", "not a legal branch name (git check-ref-format --branch)")
+                continue
             if n in {x[2] for x in running} | {p[0] for p in pending}:
                 log(f"agent {n} already running/queued — duplicate ignored")
                 continue
             pending.append((n, mdl if mdl in MODELS else DEFAULT_MODEL, base or INT_BR, b))
         while not stopped():   # rolling dispatch
             while pending and len([x for x in running if x[0].poll() is None]) < MAX_PAR:
+                if over_budget("starts", running):
+                    break
                 n, mdl, base, b = pending.pop(0)
                 st = run_agent(n if not os.path.isdir(f"{R}/wt/{n}") else f"{n}-c{rnd}", mdl, base, b, rnd)
                 if st:
                     running.append(st)
+                    spend(running)["starts"] += 1
+                    save_state()
+            if pending and over_budget("starts", running) and not any(x[0].poll() is None for x in running):
+                idle_until_rollover(running)
+                break
             done = [x for x in running if x[0].poll() is not None]
             if done:
                 finish(done)
@@ -536,11 +778,14 @@ def main():
                     time.sleep(POLL_S)
                 break
             watch_reports(running)
+            spend(running)
+            save_state()
             time.sleep(POLL_S)
         rnd += 1
     if stopped():
         for x in running:
             x[0].terminate()
+            x[0].poll()
         finish(running)
     log("supervisor loop exiting")
 

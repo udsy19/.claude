@@ -1,16 +1,30 @@
 #!/usr/bin/env bash
 # Machine-wide build queue: N parallel slots for heavy build/test commands, shared by every lane's agents.
-# Install as /srv/bin/<tool> (e.g. cargo) FIRST on the workers' PATH, pointing REAL at the real binary.
-#   ln -s /srv/bin/build-queue /srv/bin/cargo ; export REAL_cargo=$HOME/.cargo/bin/cargo
-# Light subcommands pass straight through; heavy ones wait for a free slot. supervise.py sets BUILD_QUEUE_SLOTS and
-# BUILD_QUEUE_HEAVY for every worker from org.json "build_queue" (slots; the subcommands named in "wrap").
-tool=$(basename "$0"); real_var="REAL_${tool}"; real=${!real_var:-$(type -ap "$tool" | grep -v "^/srv/bin/" | head -1)}
-[ -n "$real" ] || { echo "build-queue: no real $tool on PATH outside /srv/bin (set REAL_$tool)" >&2; exit 127; }
+# bootstrap-host.sh installs it as <bin_dir>/build-queue (remote: /srv/bin; local: ORG_ROOT/bin) with one symlink per
+# wrapped tool (e.g. <bin_dir>/cargo); that dir goes FIRST on the workers' PATH (org.json worker_env.PATH).
+# The real binary: $REAL_<tool>, else org.json build_queue.real.<tool>, else the first <tool> on PATH outside this dir.
+# Light subcommands pass straight through; heavy ones wait for a free slot, locked with flock in $BUILD_QUEUE_LOCK_DIR
+# (default ORG_ROOT/locks). supervise.py sets BUILD_QUEUE_SLOTS and BUILD_QUEUE_HEAVY for every worker from
+# org.json "build_queue" (slots; the subcommands named in "wrap").
+tool=$(basename "$0"); self=$(cd "$(dirname "$0")" && pwd -P)
+# ORG_ROOT: the env, else from LANE_ROOT (<ORG_ROOT>/lanes/<lane>), else this dir's parent if it holds org.json
+org=${ORG_ROOT:-}; [ -n "$org" ] || { [ -n "${LANE_ROOT:-}" ] && org=${LANE_ROOT%/lanes/*}; }
+[ -n "$org" ] || { [ -f "$self/../org.json" ] && org=$(cd "$self/.." && pwd); }
+real_var=REAL_$(printf %s "$tool" | tr -c 'A-Za-z0-9_' _); real=${!real_var:-}
+[ -n "$real" ] || [ ! -f "$org/org.json" ] || real=$(python3 -c 'import json,sys
+print((json.load(open(sys.argv[1])).get("build_queue") or {}).get("real", {}).get(sys.argv[2], ""))' "$org/org.json" "$tool")
+[ -n "$real" ] || real=$(type -ap "$tool" | while IFS= read -r p; do
+  [ "$(cd "$(dirname "$p")" && pwd -P)" = "$self" ] || { echo "$p"; break; }; done)
+if [ -z "$real" ] || [ ! -x "$real" ]; then
+  echo "build-queue: no real $tool (set REAL_$tool, org.json build_queue.real.$tool, or put $tool on PATH after $self)" >&2; exit 127; fi
 SLOTS=${BUILD_QUEUE_SLOTS:-3}; HEAVY=${BUILD_QUEUE_HEAVY:-"build test run check clippy bench"}
 case " $HEAVY " in *" $1 "*) ;; *) exec "$real" "$@";; esac
+LOCKS=${BUILD_QUEUE_LOCK_DIR:-${org:+$org/locks}}
+[ -n "$LOCKS" ] || { echo "build-queue: set BUILD_QUEUE_LOCK_DIR (or ORG_ROOT) for the slot locks" >&2; exit 2; }
+mkdir -p "$LOCKS"
 while true; do
   for s in $(seq 1 "$SLOTS"); do
-    lock=/srv/build-queue.$tool.$s; exec 9>"$lock"; chmod 666 "$lock" 2>/dev/null
+    exec 9>"$LOCKS/$tool.$s"
     if flock -n 9; then exec "$real" "$@"; fi
   done
   sleep 5

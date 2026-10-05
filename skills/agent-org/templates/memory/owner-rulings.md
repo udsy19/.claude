@@ -1,16 +1,15 @@
 ---
 name: owner-rulings
-description: Standing owner rulings that bind every session, lane and agent
+description: Where this project's standing owner rulings live — a pointer, never a copy
 metadata:
-  type: feedback
+  type: reference
 ---
-- **Goals, not tests:** every brief gives goal, vision, what we're building, and what hasn't worked.
-- **Vault first:** reports open with a Vault check and write findings back.
-- **The owner judges by looking:** real-product screenshots and videos, not counts or claims.
-- **Settings, not questions:** whatever the product can expose as a user setting is a setting with sensible
-  defaults, never an owner question.
-{{EXTRA}}
+The owner's standing rulings for {{PROJECT}} live in the repo, in `.claude/rules/owner-rulings.md`: versioned,
+owner-only (a protected path), and loaded into every Claude Code session there. A lane's own rulings live in
+`lanes/<lane>/rulings.md` under `{{ORG_ROOT}}`.
 
-**Why:** {{WHY}}
-**How to apply:** encode these in every lane's context.md and agent-rules.md, and re-read them before
-briefing anyone. Related: [[org-architecture]].
+**Why:** a ruling kept in one person's auto-memory is invisible to the lanes, unreviewable, and lost with the
+machine; the repo file is what every agent actually reads.
+**How to apply:** when the owner rules, write it into that file in their words and commit with
+`Authority: owner`; never copy the rulings into memory. Memory holds corrections about how to work and
+preferences that hold across projects. Related: [[org-architecture]].

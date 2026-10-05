@@ -1,8 +1,9 @@
-# Memory: what goes where (three layers, never duplicated)
+# Memory: what goes where (never duplicated)
 
 | layer | holds | lifetime | who writes |
 |---|---|---|---|
-| **Claude auto-memory** (`~/.claude/projects/<proj>/memory/`) | WHO the owner is and HOW they want work done: preferences, standing rulings, corrections and their reasons, where things live and why | across all sessions | the overseer, the moment the owner states a rule or corrects something |
+| **Claude auto-memory** (`~/.claude/projects/<proj>/memory/`) | WHO the owner is and HOW they want work done: corrections and their reasons, preferences that hold across projects, where things live and why — and a pointer to the rulings file, never a copy of it | across all sessions | the overseer, the moment the owner corrects something |
+| **Owner rulings** (`<repo>/.claude/rules/owner-rulings.md`) | the owner's standing rulings for this project | the project's life (in git, protected) | the overseer in the owner's words, `Authority: owner` |
 | **Vault** (`vault/`) | WHAT the project knows: vision, decisions, designs, reports, research, session handoffs | the project's life (in git) | every agent: reports, session notes, write-backs |
 | **Lane state** (`<ORG_ROOT>/lanes/*`) | the live working set: supervisor plan, consult outputs, worker reports, owner Q&A, renders | the current push, snapshotted hourly to git | the loops, plus the overseer appending owner answers |
 

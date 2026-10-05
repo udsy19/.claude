@@ -29,6 +29,7 @@ const MARKERS = fs.mkdtempSync(path.join(os.tmpdir(), 'org-contract-test-'))
 process.on('exit', () => { try { fs.rmSync(MARKERS, { recursive: true, force: true }) } catch {} })
 const BASE_ENV = { ...process.env }
 delete BASE_ENV.ORG_ROLE   // the suite runs as a subagent unless a case says otherwise
+delete BASE_ENV.AGENT_NAME; delete BASE_ENV.AGENT_ORG_HEADLESS   // ...and as an interactive one
 function run(payload, env = {}) {
   try {
     const out = execFileSync('node', [HOOK], {
@@ -43,7 +44,8 @@ const edit = (f, s) => ({ session_id: s, tool_name: 'Edit', tool_input: { file_p
 const ORDINARY = 'src/zz-ordinary-file.js'
 
 // (a) ownership
-for (const p of ['vault/Plan.md', 'vault/Roadmap.md', 'vault/Decisions/0001-any.md', '.claude/rules/gate-independence.md']) {
+for (const p of ['vault/Plan.md', 'vault/Roadmap.md', 'vault/Decisions/0001-any.md', '.claude/rules/gate-independence.md',
+  '.claude/settings.json']) {
   const r = run(edit(p, sid()))
   check(`(a) a subagent editing ${p} is REFUSED`, r.code === 2 && /REFUSED/.test(r.err), `exit ${r.code}`)
   check('(a) ... and is told how to propose instead', /propose\.mjs/.test(r.err))
@@ -54,6 +56,9 @@ run(edit('vault/Plan.md', 'supersession'), { ORG_ROLE: 'supervisor' })
 const sup3 = run(edit('vault/Plan.md', 'supersession'), { ORG_ROLE: 'supervisor' })
 check('(a) ... and after that is not blocked at all', sup3.code === 0, `exit ${sup3.code}`)
 const own = sid(); run(edit(ORDINARY, own), { ORG_ROLE: 'owner' })
+check('(a) settings.local.json is NOT protected (it is per-machine, untracked)', (() => {
+  const s = sid(); run(edit(ORDINARY, s)); return run(edit('.claude/settings.local.json', s)).code === 0
+})())
 check('(a) the OWNER may edit a decision', run(edit('vault/Decisions/0001-any.md', own), { ORG_ROLE: 'owner' }).code === 0)
 check('(a) a subagent writing vault/Reports/ is ALLOWED (after delivery)', (() => {
   const s = sid(); run(edit(ORDINARY, s)); return run(edit('vault/Reports/some-report.md', s)).code === 0
@@ -167,6 +172,8 @@ check('(d) a payload with no tool_name fails OPEN', run({ session_id: sid() }).c
     ['what was already tried', /vault\/Index\.md/],
     ['the one-row reader', /scripts\/plan-row\.mjs/],
     ['who already implements X', /scripts\/where\.mjs/],
+    ['the memory ban, Claude Code auto-memory included', /Claude Code auto-memory/],
+    ['the reversible default (headless runs never wait)', /reversible\s+default/],
   ]
   for (const card of cards) {
     const txt = fs.readFileSync(path.join(dir, card), 'utf8')
@@ -189,6 +196,52 @@ check('(d) a payload with no tool_name fails OPEN', run({ session_id: sid() }).c
     secondWrite({ session_id: sid(), tool_name: 'Edit',
       tool_input: { file_path: path.join(ROOT, ORDINARY), new_string: `// see ${PLAN} for the queue` } }).code === 0,
     'the scan must not wedge ordinary work')
+}
+
+// (i) THE GATE HOLDS THE DOCUMENTS TO THE DECLARATION. Run against this tree it passes;
+// run against a scratch copy whose contract drops one protected path it must FAIL, or the
+// gate would be passing because it checks nothing.
+{
+  const gate = (root) => { try { execFileSync('node', [path.join(root, 'scripts/gates/protected-paths.mjs')], { encoding: 'utf8', stdio: 'pipe' }); return 0 } catch (e) { return e.status ?? 1 } }
+  // only an INSTALLED tree has .claude/rules/; the kit stores it as rules.tmpl/ (see init-repo.mjs)
+  if (fs.existsSync(path.join(ROOT, '.claude/rules/protected-paths.md'))) check('(i) the protected-paths gate passes on this tree', gate(ROOT) === 0)
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'org-pp-gate-'))
+  try {
+    for (const rel of ['scripts/gates/protected-paths.mjs', 'scripts/lib/protected-paths.mjs', 'scripts/hooks/agent-contract.mjs',
+      'scripts/gates/plan-ownership.mjs', 'vault/AGENTS.md', 'vault/SUPERVISOR.md', 'vault/CLAUDE.md']) {
+      fs.mkdirSync(path.dirname(path.join(tmp, rel)), { recursive: true }); fs.copyFileSync(path.join(ROOT, rel), path.join(tmp, rel))
+    }
+    const rules = fs.existsSync(path.join(ROOT, '.claude/rules/protected-paths.md')) ? '.claude/rules' : '.claude/rules.tmpl'
+    fs.mkdirSync(path.join(tmp, '.claude/rules'), { recursive: true })
+    fs.copyFileSync(path.join(ROOT, rules, 'protected-paths.md'), path.join(tmp, '.claude/rules/protected-paths.md'))
+    check('(i) CONTROL — the scratch copy passes before it is broken', gate(tmp) === 0)
+    const agents = path.join(tmp, 'vault/AGENTS.md')
+    fs.writeFileSync(agents, fs.readFileSync(agents, 'utf8').replaceAll('.claude/settings.json', '.claude/settings'))
+    check('(i) a contract that stops naming .claude/settings.json FAILS the gate', gate(tmp) === 1)
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+}
+
+// (j) LANE PROCESSES. supervise.py starts every lane process with AGENT_ORG_HEADLESS=1; workers
+// also carry AGENT_NAME. The lane supervisor may write nothing; a worker may not write the
+// overseer's trail or any memory. Each refusal has a control: the same write, interactive.
+{
+  const W = { AGENT_ORG_HEADLESS: '1', AGENT_NAME: 'alpha', ORG_LANE: 'core' }
+  const afterDelivery = (p, env) => { const s = sid(); run(edit(ORDINARY, s), env); return run(edit(p, s), env) }
+  const LANE_SUP = { AGENT_ORG_HEADLESS: '1', ORG_ROLE: 'supervisor' }
+  const supAny = afterDelivery(ORDINARY, LANE_SUP)
+  check('(j) the LANE SUPERVISOR is refused even an ordinary file', supAny.code === 2 && /read-only/.test(supAny.err), `exit ${supAny.code}`)
+  check('(j) ...and the plan, which ORG_ROLE=supervisor alone would allow', afterDelivery('vault/Plan.md', LANE_SUP).code === 2)
+  check('(j) CONTROL — the OVERSEER (same role, interactive) may edit the plan', afterDelivery('vault/Plan.md', { ORG_ROLE: 'supervisor' }).code === 0)
+  for (const p of ['vault/Sessions/2026-10-03-x.md', 'vault/Home.md', 'vault/Reports/audits/SESSION-REGISTRY.md',
+    '.claude/agent-memory/builder/notes.md', path.join(os.homedir(), '.claude/projects/-srv-repo/memory/feedback.md')]) {
+    const r = afterDelivery(p, W)
+    check(`(j) a lane WORKER writing ${p.replace(os.homedir(), '~')} is REFUSED`, r.code === 2 && /lane worker does not write/.test(r.err), `exit ${r.code}`)
+  }
+  check('(j) ...a worker sub-agent (AGENT_NAME inherited, no HEADLESS) too', afterDelivery('vault/Home.md', { AGENT_NAME: 'alpha' }).code === 2)
+  check('(j) CONTROL — an interactive session may write its session note', afterDelivery('vault/Sessions/2026-10-03-x.md', {}).code === 0)
+  check('(j) CONTROL — a lane worker may write its code and its report', afterDelivery(ORDINARY, W).code === 0 &&
+    afterDelivery('vault/Reports/some-report.md', W).code === 0)
+  check('(j) CONTROL — a file merely NAMED memory is not memory', afterDelivery('src/memory/cache.js', W).code === 0)
 }
 
 // A COUNT, NOT JUST AN ABSENCE OF FAILURES: a run in which no check executed must not read

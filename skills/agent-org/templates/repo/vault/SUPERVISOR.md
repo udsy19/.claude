@@ -24,7 +24,7 @@ thing that does, so never export it for a subagent. The owner runs as `ORG_ROLE=
 
 ## 1. What is yours alone
 
-`vault/Plan.md` · `vault/Roadmap.md` · `vault/Decisions/` · `.claude/rules/`
+`vault/Plan.md` · `vault/Roadmap.md` · `vault/Decisions/` · `.claude/rules/` · `.claude/settings.json`
 
 Only the two roles `supervisor` and `owner` may write these. `scripts/hooks/agent-contract.mjs`
 refuses everyone else's edit, and `scripts/gates/plan-ownership.mjs` re-derives from git which
@@ -56,7 +56,7 @@ agent cannot tell what is left. Decompose it into `N.1 … N.k` FIRST.
 Copy them in. Do not link to them, and do not assume the role card carries them.
 
 ```
-You may NOT edit vault/Plan.md, vault/Roadmap.md, vault/Decisions/ or .claude/rules/.
+You may NOT edit vault/Plan.md, vault/Roadmap.md, vault/Decisions/, .claude/rules/ or .claude/settings.json.
 To change one:  node scripts/propose.mjs --row <id> --kind split|reorder|add|done|challenge --why "<reason WITH a number>"
 Your row, in full:  node scripts/plan-row.mjs <id>
 Which code is where: vault/Map-code.md   ·   who already implements X: node scripts/where.mjs <name> --branches
@@ -120,6 +120,11 @@ decision is that it gets made again, worse, by someone with less context.**
    `node scripts/gates/plan-integrity.mjs --relocate` and the plain gate.
 4. Lift durable findings into the vault (a report, a decision), regenerate the hubs and the Index,
    and keep [[Home]] NOW true.
+
+A lane supervisor's `LAND` is gated by its loop instead: it needs main checked out in the repo and
+`plan-ownership.mjs`, `sprawl.mjs` and `protected-paths.mjs` passing on the candidate (with main's gate
+code); a refusal is the lane's `reports/NNNN-zz-land-refused-<branch>.md` and a `REFUSED` line in the
+event feed. Read it before landing that branch by hand.
 
 ## 7. What you are actually optimising
 

@@ -45,7 +45,8 @@ start · what to deliver · how you will judge it · the report it must write (c
 === END AGENT ===
 
 === MERGE branch=<lane/{{LANE}}/slug> ===      (into the lane integration branch, after judging evidence)
-=== LAND branch=<ref> ===                       (into main — only if this lane may land; only with real-product proof)
+=== LAND branch=<ref> ===                       (into main — only if this lane may land; only with real-product proof;
+                                                  the loop runs the landing gates first and tells you if it refused)
 === KILL name=<slug> ===                         (stop a running agent that is stuck, overdue or obsolete; its
                                                   work is committed to its branch; say why in a LEARN)
 

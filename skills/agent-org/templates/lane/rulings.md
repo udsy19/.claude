@@ -6,6 +6,6 @@ raw answers, so this is where a ruling must be to be remembered.
 
 - Keep it current: when an answer supersedes a ruling, replace the ruling here (the log keeps the history).
 - One line per ruling: `- <ruling> — <YYYY-MM-DD>, owner-answers § <entry heading>`.
-- Short and true beats complete. Standing org-wide rulings live in `context.md`, not here.
+- Short and true beats complete. Standing project-wide rulings live in the repo's `.claude/rules/owner-rulings.md`, not here.
 
 ## Rulings

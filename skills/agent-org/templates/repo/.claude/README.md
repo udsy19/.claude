@@ -1,7 +1,7 @@
 # `.claude/` — what Claude Code loads in this repo
 
-- `rules/` — the laws every agent is held to: no-bloat, goals-not-tests, vault-first,
-  evidence-and-honesty and protected-paths load into every session; gate-independence loads when an
+- `rules/` — the laws every agent is held to: owner-rulings (the owner's standing rulings), no-bloat,
+  goals-not-tests, vault-first, evidence-and-honesty and protected-paths load into every session; gate-independence loads when an
   agent reads or edits a gate, hook, test or evidence file (its `paths:` frontmatter), and
   evidence-and-honesty carries its core always. Normative, not
   advisory; owner-only (`vault/CLAUDE.md`).

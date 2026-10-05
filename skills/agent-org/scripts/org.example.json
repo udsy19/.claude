@@ -1,12 +1,13 @@
 {
-  "_comment": "Copied to <ORG_ROOT>/org.json by the agent-org skill and filled in from the setup interview.",
+  "_comment": "Copied to <ORG_ROOT>/org.json by the agent-org skill and filled in from the setup interview. runtime: local (as the owner, ORG_ROOT/bin, no worker_user) or remote (a Linux VPS run by worker_user; \"vps\" is read as remote).",
   "project": "My Project",
   "repo": "/path/to/repo",
   "main_branch": "main",
-  "runtime": "vps",
+  "runtime": "remote",
   "host": "root@203.0.113.10",
   "worker_user": "agent",
   "claude_bin": "/usr/local/bin/claude",
+  "bin_dir": "/srv/bin",
 
   "supervisor": { "backend": "codex", "model": "gpt-6-astra", "effort": "high", "web_search": true },
   "_supervisor_alt": { "backend": "claude", "model": "claude-opus-5-5" },
@@ -15,13 +16,17 @@
   "default_worker_model": "opus",
 
   "agent_timeout_s": 28800,
+  "max_consults_per_day": 100,
+  "max_agent_starts_per_day": 40,
+  "max_agent_hours_per_day": 48,
   "worker_env": { "PATH": "/srv/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" },
   "per_agent_build_dir": "CARGO_TARGET_DIR",
   "worktree_links": ["web/node_modules", "web/.env.local"],
   "commit_env": {},
 
-  "build_queue": { "slots": 3, "wrap": ["cargo build", "cargo test", "cargo run", "cargo check"] },
+  "build_queue": { "slots": 3, "wrap": ["cargo build", "cargo test", "cargo run", "cargo check"], "real": {} },
   "sync": { "push_main": false, "branch_globs": ["lane/*"], "interval_s": 300 },
   "state_backup_branch": "backup/lane-state",
+  "state_backup": { "include": [] },
   "auth_probe_interval_s": 1800
 }

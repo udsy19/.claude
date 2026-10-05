@@ -15,7 +15,11 @@
 set -u
 # Lane workers (supervise.py sets AGENT_NAME) keep no session note: their report is their trail.
 # Blocking them would push parallel branches to edit the shared session files, or to pause the mission.
+# The lane SUPERVISOR's consult is also a headless `claude -p` in the integration checkout, under
+# this same Stop hook: blocking it would hold a judge's turn open over a session note it may not
+# write. supervise.py starts every lane process with AGENT_ORG_HEADLESS=1.
 [ -n "${AGENT_NAME:-}" ] && exit 0
+[ -n "${AGENT_ORG_HEADLESS:-}" ] && exit 0
 ROOT="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 # ORG_MISSION comes from .claude/settings.json's `env` block; read it from there when the
 # hook environment does not carry it, so the guard and the settings cannot disagree.
@@ -36,7 +40,9 @@ state=$(sed -n '1,/^---$/{s/^state:[[:space:]]*//p;}' "$MISSION" | head -1 | tr 
 
 # The session note must be at least as fresh as the last dispatch: the loop's trail is the
 # note, so a dispatch that happened after the note was last written is an unlogged dispatch.
-today=$(date +%Y-%m-%d)
+today=$(date +%Y-%m-%d)       # session notes are named with the local date (people name them)
+day_utc=$(date -u +%Y-%m-%d)  # the dispatch log is stamped in UTC (usage-hook.sh: jq `now|todate`): match it in UTC,
+                              # or from the evening on (wherever local and UTC dates differ) the guard finds nothing
 # COUNT THE DISPATCHES, NOT THE LINES.
 #
 # This once counted every line dated today: 239 when SEVEN real dispatches had happened,
@@ -52,8 +58,8 @@ today=$(date +%Y-%m-%d)
 # reads garbage. My first version of this fix had exactly that, and its own falsification
 # caught it: the four cases reported 7/233 correctly and then 2, 2, 2 for logs holding 0, 0
 # and 3 dispatches. Substitute the empty-file case explicitly instead of short-circuiting.
-lines=$(grep -c "\"ts\":\"$today" "$LOG" 2>/dev/null); lines=${lines:-0}
-attributed=$(grep "\"ts\":\"$today" "$LOG" 2>/dev/null | grep -cv '"agent":""'); attributed=${attributed:-0}
+lines=$(grep -c "\"ts\":\"$day_utc" "$LOG" 2>/dev/null); lines=${lines:-0}
+attributed=$(grep "\"ts\":\"$day_utc" "$LOG" 2>/dev/null | grep -cv '"agent":""'); attributed=${attributed:-0}
 unattributed=$((lines - attributed))
 # NOT a silent filter. If every stop today was unattributed, dispatches still happened and
 # this guard must still fire — it just cannot name them. Making a check ignore something
@@ -69,6 +75,7 @@ fi
 # The independent log proves dispatches happened today; the supervisor's own dispatch table
 # (the mission file) says when the LAST one was recorded; the session note must be at least
 # that fresh. Sub-sub-agent stops also land in the log, so the log's mtime alone over-fires.
+# shellcheck disable=SC2012  # newest by mtime; session notes are our own YYYY-MM-DD-slug.md names
 note=$(ls -t "$ROOT/vault/Sessions"/"$today"-*.md 2>/dev/null | head -1)
 # COMPARE THE NOTE TO THE LAST DISPATCH, NOT TO THE MISSION FILE.
 #
@@ -76,7 +83,7 @@ note=$(ls -t "$ROOT/vault/Sessions"/"$today"-*.md 2>/dev/null | head -1)
 # so ANY note written today satisfied it for the rest of the day, however many agents were
 # dispatched after it (measured: sixteen hours and eight passes of silence). The right
 # reference is the last attributed dispatch, which this script already reads.
-last_ts=$(grep "\"ts\":\"$today" "$LOG" 2>/dev/null | grep -v '"agent":""' | tail -1 |
+last_ts=$(grep "\"ts\":\"$day_utc" "$LOG" 2>/dev/null | grep -v '"agent":""' | tail -1 |
           sed -n 's/.*"ts":"\([^"]*\)".*/\1/p')
 if [ -n "$note" ]; then
   if [ -z "$last_ts" ]; then
@@ -97,7 +104,10 @@ if [ -n "$note" ]; then
   # strictly-older only: a note written in the same second as a dispatch is fresh.
   [ "$note_epoch" -ge "$last_epoch" ] && clean
 fi
-logged=$([ -n "$note" ] && echo "1 (STALE: written $(date -r "$note_epoch" '+%H:%M' 2>/dev/null), before the last dispatch at $last_ts)" || echo 0)
+# The note's time comes from python3 too: `date -r <epoch>` is BSD-only (GNU reads `-r` as a
+# reference FILE), so on Linux the message said "written , before…".
+note_hm=$([ -n "$note" ] && python3 -c "import datetime as d,sys;print(d.datetime.fromtimestamp(int(sys.argv[1])).strftime('%H:%M'))" "$note_epoch" 2>/dev/null)
+logged=$([ -n "$note" ] && echo "1 (STALE: written $note_hm, before the last dispatch at $last_ts)" || echo 0)
 
 blocks=$(cat "$COUNTER" 2>/dev/null || echo 0)
 if [ "$blocks" -ge 3 ]; then clean; fi

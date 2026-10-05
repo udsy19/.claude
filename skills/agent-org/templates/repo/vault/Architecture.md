@@ -63,10 +63,11 @@ verbatim · **—** may not write. "Worker" and "sub-agent" are both `ORG_ROLE` 
 | lane `owner-answers.md` | W | R (verbatim, dated) | — | — | — | append-only by protocol |
 | lane `rulings.md` | W | W (curates the law in force from the answers) | — | — | — | read whole every consult |
 | lane `reports/`, `renders/<agent>/` (owner references: `renders/owner/`) | — | read | read | W (own report, own renders) | — (via its worker) | `supervise.py` names the path |
-| `main` branch (landing) | W | W | W only if `may_land` (`LAND`) | — | — | `org-board.sh` on the merge; `sprawl.mjs`, `plan-ownership.mjs` |
+| `main` branch (landing) | W | W | W only if `may_land` (`LAND`) | — | — | lane LAND: `supervise.py` runs `plan-ownership.mjs`, `sprawl.mjs`, `protected-paths.mjs` (main's gate code) first and refuses on a failure; by hand: `org-board.sh` on the merge; PRs: `.github/workflows/org-gates.yml` |
 | work branches `lane/<lane>/<slug>` | — | — | MERGE into `lane/<lane>/integration` | W (its own) | — | `git-sync.sh` (never force) |
-| `.claude/settings.json`, hooks, role cards | W | W | — | — | — | review (no hook guards these) |
-| Claude auto-memory | — | W (owner rulings, corrections) | — | — (no `memory:` frontmatter) | — | protocol |
+| `.claude/settings.json` | W | W | — | P | P | `agent-contract.mjs` + `plan-ownership.mjs` (protected path) |
+| hook scripts, role cards | W | W | — | — | — | review (no hook guards these) |
+| Claude auto-memory | — | W (a pointer to `.claude/rules/owner-rulings.md`, corrections, cross-project preferences) | — | — (no `memory:` frontmatter) | — | protocol |
 
 **What each may NOT write**, in one line each: the owner — nothing is closed to the owner. The
 overseer — an owner verdict or acceptance, and a rule or decision the owner did not give. A lane

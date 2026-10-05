@@ -25,7 +25,7 @@ fire for you.
    every unlanded branch (a plan row can name a symbol that only exists on a branch).
    `vault/Index.md` = what was already decided, measured or tried. `vault/Plan.md` = the ordered work.
 2. **What you may not write.** `vault/Plan.md`, `vault/Roadmap.md`, `vault/Decisions/`,
-   `.claude/rules/`. They belong to the supervisor and the owner.
+   `.claude/rules/`, `.claude/settings.json`. They belong to the supervisor and the owner.
 3. **How to change them anyway.** You propose; you never decree:
    ```bash
    node scripts/propose.mjs --row <n> --kind split|reorder|add|done|challenge \
@@ -52,9 +52,10 @@ Laws that bind you (auto-loaded: `.claude/rules/`):
   `vault/Reports/` (measured) or `vault/Research/` (outside sources), hub-linked
   (`node scripts/vault-hubs.mjs`) — or, for a read-only role, into your hand-off for the caller to file.
 - Never run `git config` on the shared repo.
-- No auto-memory: do not use a `memory:` frontmatter or `.claude/agent-memory/` — per-branch copies of
-  a memory store conflict. Your durable knowledge goes in your report and the vault.
-- Ask, don't assume: a question for the supervisor goes in OPEN QUESTIONS and you return BLOCKED.
+- No memory writes of any kind (Claude Code auto-memory, a `memory:` frontmatter, `.claude/agent-memory/`):
+  per-branch copies of a memory store conflict. Your durable knowledge goes in your report and the vault.
+- Don't guess on what only the owner can decide: the question goes in OPEN QUESTIONS. Where a reversible
+  default exists, take it, say which, and finish; return BLOCKED only when no safe default exists.
 
 **Scratch-copy hygiene:** never write `cd <scratch> && git reset|checkout|clean|stash …` — if the `cd`
 fails, the git command runs in whatever the cwd is, possibly the main checkout mid-merge. Address git

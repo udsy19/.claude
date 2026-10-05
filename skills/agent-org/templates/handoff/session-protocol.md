@@ -4,7 +4,8 @@
 1. Read `vault/Home.md`, then the newest `vault/Sessions/` note, then MEMORY.md (auto-loaded).
 2. Run `lanes.sh <ORG_ROOT> status`. Read each lane's `owner-questions.md` tail, and the event-feed
    backlog since the last session.
-3. Answer what you can from the owner's standing rulings. Relay what you can't to the owner, in plain
+3. Answer what you can from the owner's standing rulings (`.claude/rules/owner-rulings.md`, then the lane's
+   `rulings.md`). Relay what you can't to the owner, in plain
    words, with images.
 4. Re-arm tracking: arm a Monitor on `lane-events.sh` yourself, and ask the owner to start the heartbeat
    with `/loop Follow .claude/loop-prompts/org-tracker.md` (a session can't start `/loop` itself). If they
@@ -15,7 +16,10 @@
   `## <date> · <question>` section, the owner's words), then curate the lane's `rulings.md` (the law in
   force: add the ruling, remove what it supersedes). Consults read `rulings.md` whole and only the newest
   raw answers.
-- **Rulings and corrections:** save each to auto-memory, with the why.
+- **Rulings:** a standing, project-wide ruling goes into `.claude/rules/owner-rulings.md` in the owner's
+  words, committed with `Authority: owner`; a ruling for one lane goes into that lane's `rulings.md`.
+- **Corrections and preferences:** how the owner wants work done, and preferences that hold across
+  projects, go to auto-memory with the why. Auto-memory points at the rulings file; it never copies it.
 - **Infrastructure:** fix what is safe (orphan processes, ownership, stuck loops); report the rest.
 - **Spot-checks:** audit finished workers against their artifacts, not their claims.
 

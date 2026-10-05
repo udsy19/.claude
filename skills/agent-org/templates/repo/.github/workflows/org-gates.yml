@@ -1,0 +1,35 @@
+# The org's landing gates, run on every pull request into {{MAIN_BRANCH}}. The same gates
+# supervise.py runs before a LAND, so a human-opened PR is held to the same bar.
+# Installed by the agent-org kit (init-repo.mjs); an existing file is never overwritten.
+name: org-gates
+
+on:
+  pull_request:
+    branches: [{{MAIN_BRANCH}}]
+
+permissions:
+  contents: read
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    env:
+      ORG_MAIN_BRANCH: {{MAIN_BRANCH}}
+    steps:
+      # Full history and the PR head itself (not GitHub's synthetic merge commit), so the gates
+      # grade merge-base(origin/{{MAIN_BRANCH}}, head)..head: exactly what the PR carries.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: org board
+        run: bash scripts/gates/org-board.sh
+      # Run on their own as well, so a red ownership or sprawl verdict is its own failed step.
+      # Exit 77 is a declared skip (nothing in the range), never a failure and never a pass.
+      - name: plan ownership
+        run: node scripts/gates/plan-ownership.mjs || [ $? -eq 77 ]
+      - name: sprawl
+        run: node scripts/gates/sprawl.mjs || [ $? -eq 77 ]

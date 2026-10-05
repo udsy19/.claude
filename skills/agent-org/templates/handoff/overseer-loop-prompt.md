@@ -2,18 +2,21 @@ Track the {{PROJECT}} lanes on {{HOST}} and keep them healthy. Org root {{ORG_RO
 
 Each tick:
 1. **Read new events:** `lane-events.sh` (via the armed Monitor) or each lane's `lane.log` tail. Look at
-   dispatches, finishes (rc, report present?), MERGE/LAND, ASK_OWNER, usage limits and WORKER AUTH FAILED.
+   dispatches, finishes (rc, report present?), MERGE/LAND, REFUSED blocks and landings (the refusal file
+   is `reports/NNNN-zz-land-refused-<branch>.md`), ASK_OWNER, BUDGET caps, usage limits, UNFILLED,
+   SUPERVISOR ERROR and WORKER AUTH FAILED.
 2. **Check each finished worker.** Read its report, check the evidence (screenshots, commits), and confirm
    the report opens with a Vault check.
-3. **New ASK_OWNER:** answer it from the standing rulings if they cover it. Otherwise tell the owner in one
+3. **New ASK_OWNER:** answer it from the standing rulings (`.claude/rules/owner-rulings.md`, then the lane's
+   `rulings.md`) if they cover it. Otherwise tell the owner in one
    or two plain sentences, with images, and append the answer to the lane's `owner-answers.md` when it
-   comes (its own `## <date> · <question>` section). Then update the lane's `rulings.md`: add the ruling,
-   and replace any ruling it supersedes. Consults show `rulings.md` in full but only the newest 10 raw
+   comes (its own `## <date> · <question>` section). Then record the ruling: a project-wide one in `.claude/rules/owner-rulings.md` (`Authority: owner`), a
+   lane-only one in the lane's `rulings.md`; replace any ruling it supersedes. Consults show `rulings.md` in full but only the newest 10 raw
    answers, so a ruling missing from `rulings.md` is eventually forgotten.
 4. **Health:** load and CPU steal, orphan processes (parent PID 1, finished owner), workers timing out with
    no report (`REPORT OVERDUE`), `NO ACTIONABLE BLOCK` twice in a row (the supervisor's output format or
    login is broken), `KILLED` agents, a loop silent for over 2 h, git-sync DIVERGED or refused pushes,
-   `.git` ownership, disk (`logs/gc.log`; `lanes.sh <ORG_ROOT> gc` by hand), worker and supervisor logins, and the deploy after any LAND. Fix what is safe; report the rest.
+   repo ownership (the org's one user must own it), disk (`logs/gc.log`; `lanes.sh <ORG_ROOT> gc` by hand), worker and supervisor logins, and the deploy after any LAND. Fix what is safe; report the rest.
 5. **Promote memory.** New LEARN entries in `lanes/*/lane-memory.md` that hold beyond the lane (tried and
    rejected, measured, decided) get one line each in `vault/Index.md`, written INSIDE the `INDEX:PROMOTED-BEGIN` …
    `INDEX:PROMOTED-END` markers (the rest of Index.md is generated and is overwritten on regeneration),

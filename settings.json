@@ -62,6 +62,15 @@
             "command": "f=.claude/hooks/simplify-ignore.sh; for d in \"$CLAUDE_PROJECT_DIR\" \"$HOME\"; do [ -f \"$d/$f\" ] && exec bash \"$d/$f\"; done; exit 0"
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=.claude/hooks/vault-gate.sh; for d in \"$CLAUDE_PROJECT_DIR\" \"$HOME\"; do [ -f \"$d/$f\" ] && exec bash \"$d/$f\"; done; exit 0"
+          }
+        ]
       }
     ],
     "PostToolUse": [
