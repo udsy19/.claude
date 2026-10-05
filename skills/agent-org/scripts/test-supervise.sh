@@ -338,7 +338,7 @@ mayland() { python3 -c "import json,sys; d=json.load(open(sys.argv[1])); d['may_
 O9=$SB/org9; L9=$O9/lanes/gate
 newlane "$O9" gate 120 '=== AGENT name=planner model=opus ===\nretune\n=== END AGENT ===\n' \
   '=== LAND branch=lane/gate/planner ===\n=== AGENT name=clean model=opus ===\nmeasure\n=== END AGENT ===\n' \
-  '=== LAND branch=lane/gate/clean ===\n'
+  '=== LAND branch=lane/gate/clean ===\n' '=== LAND branch=lane/gate/clean ===\n'
 mayland "$L9"
 grc=0; (cd "$L9" && ORG_ROOT=$O9 tmo 120 python3 "$O9/supervise.py" "$L9" 1 > "$SB/g.out" 2>&1) || grc=$?
 RF=$(ls "$L9"/reports/*-zz-land-refused-lane-gate-planner.md 2>/dev/null)
@@ -346,6 +346,7 @@ check "B3: a Plan.md change with no Authority: is refused (rc $grc)" "[ $grc = 0
 check "B3: the gate code is main's, not the candidate's (its neutered gate did not pass it)" "git -C $REPO show lane/gate/planner:scripts/gates/plan-ownership.mjs | grep -qx 'process.exit(0)' && grep -q 'PLAN-OWNERSHIP\\|Authority' '$RF'"
 check "B3: ...never merged: main does not carry the planner's commit" "! git -C $REPO merge-base --is-ancestor lane/gate/planner main"
 check "B3: a clean, justified candidate lands" "has $L9/lane.log 'LAND lane/gate/clean ok' && git -C $REPO merge-base --is-ancestor lane/gate/clean main"
+check "LAND of an already-landed branch: 'nothing to land', no second 'ok', the supervisor is told" "has $L9/lane.log 'LAND lane/gate/clean: nothing to land (already in main)' && [ \$(grep -c 'LAND lane/gate/clean ok' $L9/lane.log) = 1 ] && has $O9/seen-5.txt 'nothing to land'"
 check "B3: the refusal reaches the supervisor and the event feed" "has $O9/seen-3.txt 'LAND lane/gate/planner was refused' && grep -E \"\$EVENTS\" $L9/lane.log | grep -q 'LAND lane/gate/planner REFUSED'"
 O10=$SB/org10; L10=$O10/lanes/p
 newlane "$O10" p 120 '=== AGENT name=parker model=opus ===\nwork\n=== END AGENT ===\n' '=== LAND branch=lane/p/parker ===\n'

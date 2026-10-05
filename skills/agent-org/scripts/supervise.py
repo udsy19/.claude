@@ -620,6 +620,13 @@ def land(br, rnd):
     head = git_out("git symbolic-ref --short -q HEAD")
     if head != MAIN_BR:         # a merge lands on whatever is checked out: only ever on main
         return refuse_land(br, rnd, f"{REPO} has {head or 'a detached HEAD'} checked out, not {MAIN_BR}")
+    if sh(f"cd {q(REPO)} && git merge-base --is-ancestor {q(br)} {q(MAIN_BR)}").returncode == 0:
+        # Already landed: the gates would all see an empty range (77) and the merge would say "Already up to date"
+        # with exit 0 — logging "ok" would teach the supervisor that re-landing is free.
+        log(f"LAND {br}: nothing to land (already in {MAIN_BR})")
+        ST["notes"].append(f"LAND {br}: nothing to land, it is already in {MAIN_BR}.")
+        save_state()
+        return
     ok, report = land_gates(br)
     if not ok:
         return refuse_land(br, rnd, "the landing gates failed", report)
