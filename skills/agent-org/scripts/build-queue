@@ -15,8 +15,8 @@ real_var=REAL_$(printf %s "$tool" | tr -c 'A-Za-z0-9_' _); real=${!real_var:-}
 print((json.load(open(sys.argv[1])).get("build_queue") or {}).get("real", {}).get(sys.argv[2], ""))' "$org/org.json" "$tool")
 [ -n "$real" ] || real=$(type -ap "$tool" | while IFS= read -r p; do
   [ "$(cd "$(dirname "$p")" && pwd -P)" = "$self" ] || { echo "$p"; break; }; done)
-[ -n "$real" ] && [ -x "$real" ] || {
-  echo "build-queue: no real $tool (set REAL_$tool, org.json build_queue.real.$tool, or put $tool on PATH after $self)" >&2; exit 127; }
+if [ -z "$real" ] || [ ! -x "$real" ]; then
+  echo "build-queue: no real $tool (set REAL_$tool, org.json build_queue.real.$tool, or put $tool on PATH after $self)" >&2; exit 127; fi
 SLOTS=${BUILD_QUEUE_SLOTS:-3}; HEAVY=${BUILD_QUEUE_HEAVY:-"build test run check clippy bench"}
 case " $HEAVY " in *" $1 "*) ;; *) exec "$real" "$@";; esac
 LOCKS=${BUILD_QUEUE_LOCK_DIR:-${org:+$org/locks}}
