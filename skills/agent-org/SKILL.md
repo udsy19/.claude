@@ -37,13 +37,16 @@ channels, the research flow and the supervisor's memory).
 
 ## 1. Interview the owner (AskUserQuestion; at most 4 questions per call; skip what they already said)
 This is `/setup`'s tier 3, the only copy of these questions. Skip what `setup.mjs --show` already holds
-(the project, its vision and main branch may come from tiers 1–2). Ask for, and record verbatim:
+(the project, its vision and main branch may come from tiers 1–2). Every question offers its default as the
+first option, labelled "(default)"; the defaults below are the conservative choice. Ask for, and record
+verbatim:
 1. **Project:** name, the repo path (existing or new), and the main branch. Does pushing main deploy
-   anywhere? If so, a landing is a deploy.
+   anywhere? If so, a landing is a deploy. Default: no deploy (and `push_main` stays false).
 2. **Vision:** a one-liner; who uses it; the acceptance bar ("works as well as X", "Y-level output").
+   Default: inferred, with TODOs left in `vault/Vision.md` to fill before the lanes start.
 3. **Runtime:** **local** (macOS or Linux, tmux on this machine, run as the owner — not root, because
    `claude` refuses to skip permissions as root) or **remote** (a Linux VPS over SSH: the host, whether the
-   owner has an SSH key there, and the name of the worker user that will run the whole org).
+   owner has an SSH key there, and the name of the worker user that will run the whole org). Default: local.
 4. **Models.** Always ASK; never assume.
    - **Supervisor:** codex (OpenAI, read-only with web search) or Claude (read-only tools)? Which model,
      and what reasoning effort? (Model names change; examples as of 2026-10: `gpt-6-astra`,
@@ -51,18 +54,21 @@ This is `/setup`'s tier 3, the only copy of these questions. Skip what `setup.mj
    - **Workers:** which Claude models, as keys such as `opus` → `claude-opus-5-5` and `sonnet` → `sonnet`,
      and the default.
    - **Sub-agents:** may workers spawn them? This is on by default.
+   Default: Claude opus everywhere (read-only supervisor at high effort, `opus` the default worker key).
 5. **Lanes:** for each one, the name, a one-paragraph GOAL, the max parallel workers, and whether it may
    land on main. Which lane is the priority (it gets build priority)? Suggest a starting set from the goal,
-   e.g. core product, quality, deliverables, UX, critique.
+   e.g. core product, quality, deliverables, UX, critique. Default: one `core` lane toward the vision, 2
+   parallel workers, may not land (the owner or overseer lands).
 6. **Owner rulings:** anything beyond the four defaults (goals-not-tests, vault-first, judged by real-product
    evidence, settings-not-questions). Which paths are owner-only? Any accounts or services that are
-   off-limits?
+   off-limits? Default: the four defaults only.
 7. **Daily spend caps per lane.** Options, default first: "Backstops only: 100 consults, 40 agent starts,
    48 agent-hours (default)" / "Ones I'd notice: 30 consults, 10 agent starts, 12 agent-hours" / custom
    numbers. Say why the default is only a backstop: it stops a runaway lane, not an expensive day. Whatever
    the answer, write all three to `org.json` (`max_consults_per_day`, `max_agent_starts_per_day`,
    `max_agent_hours_per_day`) so the numbers in force are the ones the owner can see and edit.
-8. **What has NOT worked so far.** Ask this; it is what stops agents repeating history.
+8. **What has NOT worked so far.** Ask this; it is what stops agents repeating history. Default: "nothing
+   recorded yet" (a new project).
 
 Then show a one-screen summary (lanes table, models, runtime, rules) and get a yes before writing anything.
 The installer records that yes: it writes the mission with `accepted-by: owner` (gate-independence law 9),
