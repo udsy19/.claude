@@ -274,7 +274,11 @@ if (haveOrg) {
   else say(`org.json kept (${orgFile})`)
 } else {
   // The example shows a VPS; a new org starts local and opt-in (no worker user, no wrapped builds, no links).
-  const local = { runtime: 'local', host: '', worker_user: '', claude_bin: 'claude', worktree_links: [], build_queue: { slots: 2, wrap: [] } }
+  // claude_bin: absolute when the org runs here (bootstrap and the loop need it so); a VPS keeps the bare name.
+  const onPath = (b) => (process.env.PATH || '').split(path.delimiter).filter(Boolean).map((d) => path.join(d, b))
+    .find((p) => { try { fs.accessSync(p, fs.constants.X_OK); return fs.statSync(p).isFile() } catch { return false } })
+  const claudeBin = (asOrg.runtime ?? 'local') === 'local' ? (onPath('claude') ?? 'claude') : 'claude'
+  const local = { runtime: 'local', host: '', worker_user: '', claude_bin: claudeBin, worktree_links: [], build_queue: { slots: 2, wrap: [] } }
   writeJSON(orgFile, { ...example, ...local, ...asOrg, project: want.project, repo: project, main_branch: want.main_branch })
   say(`org.json written (${orgFile})`)
 }

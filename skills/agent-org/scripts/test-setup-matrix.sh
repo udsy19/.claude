@@ -172,6 +172,9 @@ orgrow() {  # orgrow <n> <local|vps> <claude|codex> <first|same|changed>
   fi
   eng "$B/run" "${envs[@]}" -- --scope org --install project --answers "$B/a.json" --bootstrap
   check "first run: exit 0, host ready ($runtime, as ${envs[2]#FAKE_USER=})" "[ $(rc "$B/run") = 0 ] && has '$B/run.out' 'host ready ($runtime, as ${envs[2]#FAKE_USER=})'" || tail -4 "$B/run.out"
+  [ "$rt" = local ] && check "local org: claude_bin is the absolute path on PATH, bootstrap prints no NOTE" \
+    "python3 -c 'import json,os,sys;b=json.load(open(sys.argv[1]))[\"claude_bin\"];sys.exit(not(os.path.isabs(b) and os.access(b,os.X_OK)))' '$ORGR/org.json' && ! has '$B/run.out' 'is not absolute'"
+  [ "$rt" = vps ] && check "VPS org: claude_bin stays the bare name (resolved on the VPS)" "grep -q '\"claude_bin\": \"claude\"' '$ORGR/org.json'"
   [ "$n" = 1 ] && check "defaults accepted: org.json states the backstop caps 100/40/48" \
     "python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));sys.exit(not(d[\"max_consults_per_day\"],d[\"max_agent_starts_per_day\"],d[\"max_agent_hours_per_day\"])==(100,40,48))' '$ORGR/org.json'"
   if [ "$n" = 1 ]; then commit_all; check "org install: org-board.sh exits 0 after the setup commit" "(cd \"\$P\" && bash scripts/gates/org-board.sh >'$B/board.out' 2>&1)" || tail -5 "$B/board.out"; fi

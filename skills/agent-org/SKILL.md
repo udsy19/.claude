@@ -142,7 +142,8 @@ user (clone it as them).
 1. `ORG_ROOT` (default `~/agent-org`; remote e.g. `/srv/org`): `setup.mjs --scope org` writes `org.json`
    with local defaults; by hand, copy `KIT/scripts/org.example.json` (its example is remote) and fill it.
    Set `sync.push_main` to `true` only if the owner allowed pushes to main (a push to main may deploy); it
-   defaults to `false`. Make `claude_bin` an absolute path (workers run with `worker_env.PATH`). Other keys:
+   defaults to `false`. `claude_bin` must be an absolute path (workers run with `worker_env.PATH`): `setup.mjs` resolves it from
+   PATH for a local org; on a VPS set it to the worker's path. Other keys:
    `bin_dir` (default `/srv/bin` remote, `<ORG_ROOT>/bin` local), `build_queue` (`slots`, `wrap`, and
    `real.<tool>` for a binary PATH can't find), `worktree_links` (git-ignored paths only — a tracked path is
    skipped and logged), `state_backup.include` (extra lane paths for the snapshot), the per-lane daily caps
