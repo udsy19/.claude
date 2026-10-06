@@ -49,6 +49,7 @@ session runs with the overseer's role.
 | is each lane getting better? | `python3 <ORG_ROOT>/lane-metrics.py <ORG_ROOT> --days 7` |
 | change an answer, or upgrade base → vault → org | `/setup` again (it offers "change answers") |
 | test the kit offline (fakes only) | `bash scripts/test-supervise.sh` · `test-host.sh` · `test-init-repo.sh` · `test-headless.sh` · `test-setup-matrix.sh` · `test-local-e2e.sh` |
+| prove remote mode on a real, disposable Linux host | `bash scripts/smoke-vps.sh root@HOST` (runbook: `docs/smoke-vps.md`) |
 | keep the overseer watching | `/loop Follow .claude/loop-prompts/org-tracker.md` |
 | is the org itself healthy? (in the repo) | `bash scripts/gates/org-board.sh` |
 | what is open, what was proposed (in the repo) | `node scripts/loop-state.mjs` · `node scripts/propose.mjs --list` |
