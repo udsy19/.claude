@@ -107,6 +107,13 @@ check "remote phase 2: no useradd/chown, git-sync started as agent" "! grep -qE 
 check "remote phase 2: worker gets exactly the two skills" "[ \$(ls '$HOME/.claude/skills' | wc -l) -eq 2 ]"
 boot FAKE_UID=1002 FAKE_USER=bob
 check "remote as another non-root user: refused" "[ $(rc) = 2 ] && has '$SB/boot.out' 'runs the org as agent, not bob'"
+lan() { (cd "$SB" && env "$@" bash "$SC/lanes.sh" "$ORG" start) > "$SB/lanes.out" 2>&1; echo $? > "$SB/lanes.rc"; }
+lan FAKE_UID=0 FAKE_USER=root
+check "lanes.sh start as root: refused up front, names the worker user" "[ \$(cat '$SB/lanes.rc') = 2 ] && has '$SB/lanes.out' \"su - agent -c\" && ! has '$LOG' 'tmux new-session -d -s lane-'"
+lan FAKE_UID=1002 FAKE_USER=bob
+check "lanes.sh start as another user: refused up front" "[ \$(cat '$SB/lanes.rc') = 2 ] && has '$SB/lanes.out' 'runs as worker_user agent, not bob'"
+lan FAKE_UID=1001 FAKE_USER=agent
+check "lanes.sh start as the worker user: proceeds" "[ \$(cat '$SB/lanes.rc') = 0 ]"
 
 mkorg "{'supervisor':{'backend':'codex','model':'x'}}"; PATH=$(path_without codex) boot
 check "codex supervisor without codex: stops at need, names the install" "[ $(rc) = 3 ] && has '$SB/boot.out' 'MISSING: codex — npm i -g @openai/codex'"

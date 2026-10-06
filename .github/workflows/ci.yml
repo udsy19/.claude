@@ -7,6 +7,11 @@ on:
 permissions:
   contents: read
 
+# One run per branch: a push to a PR's branch and the PR event share the group, and the newer run cancels the older.
+concurrency:
+  group: ci-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -80,5 +85,15 @@ jobs:
         run: bash skills/agent-org/scripts/test-headless.sh
       - name: /setup permutation matrix
         run: bash skills/agent-org/scripts/test-setup-matrix.sh
+      - name: control — without the vault-gate hook, every gate row must go red
+        # The harness's own falsification: rows that stay green with the hook absent test nothing.
+        if: runner.os == 'Linux'
+        run: |
+          ctl=$(mktemp -d); cp -R . "$ctl/repo"; rm "$ctl/repo/hooks/vault-gate.sh"
+          if (cd "$ctl/repo" && bash skills/agent-org/scripts/test-setup-matrix.sh) > "$ctl/out" 2>&1; then
+            echo "matrix passed without the gate hook"; exit 1; fi
+          rows=$(grep -cE '^\| G[0-9]+ ' "$ctl/out"); red=$(grep -cE '^\| G[0-9]+ .*\| FAIL \|' "$ctl/out")
+          echo "gate rows: $rows, red without the hook: $red"; grep -E '^\| G[0-9]+ ' "$ctl/out"
+          [ "$rows" -gt 0 ] && [ "$red" = "$rows" ]
       - name: local org end to end (G)
         run: bash skills/agent-org/scripts/test-local-e2e.sh

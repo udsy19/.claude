@@ -14,6 +14,15 @@ ORG_ROOT=${1:?ORG_ROOT}; cmd=${2:?command}; shift 2
 CFG=$ORG_ROOT/org.json; KIT=$(cd "$(dirname "$0")" && pwd)
 j() { python3 -c "import json,sys;d=json.load(open(sys.argv[2]));print(eval(sys.argv[1]))" "$1" "$CFG"; }
 REPO=$(j 'd["repo"]'); MAIN=$(j 'd.get("main_branch","main")')
+# One user runs the org. Commands that create or remove lane state refuse up front as anyone else (or root), so
+# a wrong-user start never looks like it worked (supervise.py would only refuse inside the tmux session).
+U=$(j 'd.get("worker_user") or ""')
+case $cmd in new|start|restart|gc)
+  run_as="run: su - $U -c \"bash $0 $ORG_ROOT $cmd $*\""
+  if [ "$(id -u)" = 0 ]; then
+    if [ -n "$U" ]; then echo "refused: lanes run as $U, never root — $run_as"; else echo "refused: lanes never run as root (claude will not skip permissions as root); run them as a normal user"; fi; exit 2; fi
+  if [ -n "$U" ] && [ "$(id -un)" != "$U" ]; then echo "refused: this org runs as worker_user $U, not $(id -un) — $run_as"; exit 2; fi;;
+esac
 all() { local d; for d in "$ORG_ROOT"/lanes/*/; do [ -d "$d" ] && basename "$d"; done; return 0; }
 # alive <pid file>: prints the agent's pid if supervise.py's pid file names a live process. The pid file is the
 # one record of a running agent: command lines are not (bash 5 execs the last command of `bash -c`, dropping "cd <wt>").

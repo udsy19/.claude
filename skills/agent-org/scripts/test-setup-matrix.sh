@@ -285,6 +285,8 @@ GATE_HOME=$HOME   # every gate call runs under the HOME that has the gate instal
                   # and a HOME without the hook makes the command a silent no-op, so "silent" rows would pass vacuously
 gate() {   # gate <dir> <session> [ENV=…] → $B/gate.rc, $B/gate.err
   local d=$1 sid=$2; shift 2
+  # No hook, no verdict: a missing script would make every "silent" row pass vacuously, so it reads as rc 99.
+  [ -f "$GATE_HOME/.claude/hooks/vault-gate.sh" ] || { echo 99 > "$B/gate.rc"; : > "$B/gate.err"; return; }
   printf '{"session_id":"%s","cwd":"%s","hook_event_name":"PreToolUse","tool_name":"Edit","tool_input":{"file_path":"%s/x"}}' "$sid" "$d" "$d" |
     (cd "$d" && env HOME="$GATE_HOME" CLAUDE_PROJECT_DIR="$d" "$@" sh -c "$GATE_CMD") > "$B/gate.out" 2> "$B/gate.err"; echo $? > "$B/gate.rc"; }
 grc() { cat "$B/gate.rc"; }
@@ -309,7 +311,6 @@ done_row PASS "AGENT_NAME/AGENT_ORG_HEADLESS → exit 0, no stderr, no log line"
 row G5 "gate: not a git repository"
 mkdir -p "$B/plain dir"; gate "$B/plain dir" s6 A=1; check "silent, exit 0" "[ $(grc) = 0 ] && [ ! -s '$B/gate.err' ]"
 done_row PASS "exit 0, no stderr"
-check "the gate script is installed where every gate row runs" "[ -f '$GATE_HOME/.claude/hooks/vault-gate.sh' ]"
 row G6 "gate: repo with a vault"
 box g6 vault project; gate "$P" s7 A=1; check "silent, exit 0" "[ $(grc) = 0 ] && [ ! -s '$B/gate.err' ]"
 done_row PASS "exit 0, no stderr"
