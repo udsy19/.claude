@@ -27,6 +27,25 @@ all() { local d; for d in "$ORG_ROOT"/lanes/*/; do [ -d "$d" ] && basename "$d";
 # alive <pid file>: prints the agent's pid if supervise.py's pid file names a live process. The pid file is the
 # one record of a running agent: command lines are not (bash 5 execs the last command of `bash -c`, dropping "cd <wt>").
 alive() { local p; p=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["pid"])' "$1" 2>/dev/null) && kill -0 "$p" 2>/dev/null && echo "$p"; }
+# busy <dir>: some live process has its working directory inside <dir> (a pid file can be lost or quarantined;
+# the processes cannot). Linux reads /proc/*/cwd; macOS has no /proc, so lsof.
+busy() { python3 - "$1" <<'PY'
+import os, subprocess, sys
+w = os.path.realpath(sys.argv[1]).rstrip("/") + "/"
+if os.path.isdir("/proc/self"):
+    cwds = []
+    for p in os.listdir("/proc"):
+        if p.isdigit():
+            try:
+                cwds.append(os.readlink(f"/proc/{p}/cwd"))
+            except OSError:
+                pass
+else:
+    out = subprocess.run(["lsof", "-a", "-d", "cwd", "-Fn"], capture_output=True, text=True).stdout
+    cwds = [l[1:] for l in out.splitlines() if l.startswith("n")]
+sys.exit(0 if any((os.path.realpath(c).rstrip("/") + "/").startswith(w) for c in cwds) else 1)
+PY
+}
 named_or_all() { if [ $# -gt 0 ]; then printf '%s\n' "$@"; else all; fi; }   # lane names are [a-z0-9-]
 next_round() { local n; n=$(grep -oE "CONSULT [0-9]+" "$ORG_ROOT/lanes/$1/lane.log" 2>/dev/null | grep -oE "[0-9]+" | sort -n | tail -1); echo $(( ${n:-0} + 1 )); }
 start_one() { local k=$1 D=$ORG_ROOT/lanes/$1
@@ -70,8 +89,9 @@ PY
       merged=$(cd "$REPO" && git branch --merged "$P/integration" --format='%(refname:short)')
       for w in "$D"/wt/*/; do [ -d "$w" ] || continue; n=$(basename "$w")
         echo "$merged" | grep -qxF "$P/$n" || continue
-        if alive "$D/pids/$n.json" > /dev/null; then echo "  keep wt/$n (agent running)"; continue; fi
-        (cd "$REPO" && git worktree remove --force "$w") && { rm -rf "$D/target/$n"; nw=$((nw+1)); echo "  removed wt/$n + target/$n"; }
+        if alive "$D/pids/$n.json" > /dev/null || busy "$w"; then echo "  keep wt/$n (agent running)"; continue; fi
+        if [ -d "$w/.git" ]; then rm -rf "$w"; else (cd "$REPO" && git worktree remove --force "$w"); fi &&   # own clone | old worktree
+          { rm -rf "${D:?}/target/${n:?}" "${D:?}/out/${n:?}" "${D:?}/home/${n:?}" "${D:?}/sandbox/${n:?}.json"; nw=$((nw+1)); echo "  removed wt/$n + target/$n"; }
       done
       nr=$(find "$D/renders" -type f -mtime +14 -not -path "$D/renders/owner/*" -print -delete 2>/dev/null | wc -l | tr -d ' ')
       echo "gc $k: removed $nw worktree(s), $nr render(s) older than 14 days; freed $(( before - $(du -sk "$D" | cut -f1) )) KB"

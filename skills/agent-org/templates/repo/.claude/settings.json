@@ -26,7 +26,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/scripts/hooks/agent-contract.mjs\""
+            "command": "node \"${AGENT_ORG_SCRIPTS:-$CLAUDE_PROJECT_DIR/scripts}/hooks/agent-contract.mjs\""
           }
         ]
       }
@@ -36,7 +36,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/loop-guard.sh\""
+            "command": "bash \"${AGENT_ORG_SCRIPTS:-$CLAUDE_PROJECT_DIR/scripts}/loop-guard.sh\""
           }
         ]
       }
@@ -47,7 +47,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/usage-hook.sh\" 2>/dev/null || true"
+            "command": "bash \"${AGENT_ORG_SCRIPTS:-$CLAUDE_PROJECT_DIR/scripts}/usage-hook.sh\" 2>/dev/null || true"
           }
         ]
       }
