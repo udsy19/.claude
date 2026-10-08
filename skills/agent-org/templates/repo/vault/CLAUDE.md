@@ -25,11 +25,14 @@ is SEARCHED, never read end to end.
 
 ## What an agent may NOT write, and this is ENFORCED
 
-`vault/Plan.md` · `vault/Roadmap.md` · `vault/Decisions/` · `.claude/rules/` · `.claude/settings.json`
+- **Intent:** `vault/Plan.md` · `vault/Roadmap.md` · `vault/Decisions/` · `vault/Missions/` · `vault/Vision.md` · `vault/Index.md`
+- **Contracts and instructions:** `vault/AGENTS.md` · `vault/SUPERVISOR.md` · `vault/Architecture.md` · `CLAUDE.md` (every one) · `.claude/rules/` · `.claude/agents/` · `.claude/skills/` · `.claude/settings.json` · `.mcp.json`
+- **Enforcement:** `scripts/gates/` · `scripts/hooks/` · `scripts/lib/protected-paths.mjs` · `scripts/lib/landing-range.mjs` · `scripts/lib/commit-trailers.mjs` · `scripts/lib/git-env.mjs` · `scripts/lib/argv.mjs` · `scripts/loop-guard.sh` · `scripts/loop-guard.count.test.sh` · `scripts/usage-hook.sh` · `scripts/gen-subject-index.py` · `scripts/vault-hubs.mjs` · `.github/workflows/`
 
 Declared once in `scripts/lib/protected-paths.mjs`; refused at the tool by
 `scripts/hooks/agent-contract.mjs` and graded again at the landing boundary by
-`scripts/gates/plan-ownership.mjs`. `scripts/gates/protected-paths.mjs` holds this page, [[AGENTS]],
+`scripts/gates/plan-ownership.mjs`, which under `--lane` refuses a lane's landing that touches any of
+them whatever it claims. `scripts/gates/protected-paths.mjs` holds this page, [[AGENTS]],
 [[SUPERVISOR]] and `.claude/rules/protected-paths.md` to that one declaration, so no document can
 grant away what the hook refuses.
 

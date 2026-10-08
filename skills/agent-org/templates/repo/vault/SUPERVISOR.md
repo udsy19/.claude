@@ -24,7 +24,11 @@ thing that does, so never export it for a subagent. The owner runs as `ORG_ROLE=
 
 ## 1. What is yours alone
 
-`vault/Plan.md` · `vault/Roadmap.md` · `vault/Decisions/` · `.claude/rules/` · `.claude/settings.json`
+- **Intent:** `vault/Plan.md` · `vault/Roadmap.md` · `vault/Decisions/` · `vault/Missions/` · `vault/Vision.md` · `vault/Index.md`
+- **Contracts and instructions:** `vault/AGENTS.md` · `vault/SUPERVISOR.md` · `vault/Architecture.md` · `CLAUDE.md` (every one) · `.claude/rules/` · `.claude/agents/` · `.claude/skills/` · `.claude/settings.json` · `.mcp.json`
+- **Enforcement:** `scripts/gates/` · `scripts/hooks/` · `scripts/lib/protected-paths.mjs` · `scripts/lib/landing-range.mjs` · `scripts/lib/commit-trailers.mjs` · `scripts/lib/git-env.mjs` · `scripts/lib/argv.mjs` · `scripts/loop-guard.sh` · `scripts/loop-guard.count.test.sh` · `scripts/usage-hook.sh` · `scripts/gen-subject-index.py` · `scripts/vault-hubs.mjs` · `.github/workflows/`
+
+A lane never lands a change to any of these, whatever its commit message claims: a trailer is written by whoever makes the commit, so `scripts/gates/plan-ownership.mjs --lane` refuses them outright at a lane's landing. They reach main only as the owner's or overseer's own commits, or as a proposal the owner applies.
 
 Only the two roles `supervisor` and `owner` may write these. `scripts/hooks/agent-contract.mjs`
 refuses everyone else's edit, and `scripts/gates/plan-ownership.mjs` re-derives from git which
@@ -56,7 +60,7 @@ agent cannot tell what is left. Decompose it into `N.1 … N.k` FIRST.
 Copy them in. Do not link to them, and do not assume the role card carries them.
 
 ```
-You may NOT edit vault/Plan.md, vault/Roadmap.md, vault/Decisions/, .claude/rules/ or .claude/settings.json.
+You may NOT edit a protected path (scripts/lib/protected-paths.mjs: the plan, missions, vision, contracts, rules, gates, hooks, workflows).
 To change one:  node scripts/propose.mjs --row <id> --kind split|reorder|add|done|challenge --why "<reason WITH a number>"
 Your row, in full:  node scripts/plan-row.mjs <id>
 Which code is where: vault/Map-code.md   ·   who already implements X: node scripts/where.mjs <name> --branches
