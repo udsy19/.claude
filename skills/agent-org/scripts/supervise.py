@@ -474,6 +474,12 @@ def worktree(name, base):
         log(f"workspace {name} from {base} FAILED: {(r.stderr if r else 'unknown base').strip()[:300]}")
         shutil.rmtree(wt, ignore_errors=True)
         return None
+    # The sandbox denies writes to <wt>/.claude, and srt adds its own denies for .claude/commands and .claude/agents.
+    # On Linux (bubblewrap) a denied path that does not exist must be created as a mount point inside an already
+    # read-only parent, which fails ("Read-only file system") and the agent never starts: create them first (empty
+    # directories are invisible to git). Seatbelt (macOS) needs no mount points.
+    for d in (".claude/commands", ".claude/agents"):
+        os.makedirs(f"{wt}/{d}", exist_ok=True)
     for src in ORG.get("worktree_links", []):          # e.g. node_modules, .env files: shared, never committed
         # Only IGNORED paths: a link to a tracked path would let a worker write the main checkout's files.
         if sh(f"cd {q(REPO)} && git check-ignore -q -- {q(src)}").returncode:
