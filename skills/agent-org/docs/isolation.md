@@ -63,6 +63,18 @@ checks every row above against real state afterwards. On `main@e318f8b` it fails
 `isolation.mode: "none"` turns all of this off. Agents then run with everything the org user can read and write.
 It exists for test fixtures; every unisolated dispatch is logged as `UNISOLATED`.
 
+## How a denied write behaves (it differs by OS, the guarantee does not)
+
+- **macOS (Seatbelt):** a write to a denied path fails inside the sandbox.
+- **Linux (bubblewrap):** srt hides a read-denied directory, such as `ORG_ROOT`, under an empty in-sandbox tmpfs.
+  A write there "succeeds" from the agent's point of view, but it lands in a private copy that disappears when
+  the agent exits; the real file never changes (CI on ubuntu-latest: the attack reports `ESCAPED`, the host file
+  is byte-identical).
+- **What the tests grade:** the host, on both OSes. `test-adv-isolation.sh` compares the real control-plane
+  files before and after.
+- **Mount points on Linux:** a write-denied path that doesn't exist yet must exist before launch, or bubblewrap
+  can't mount over it. The loop creates `<workspace>/.claude/commands` and `.claude/agents` for that reason.
+
 ## What remains
 
 - **The agent's own token.** A worker can read the token it authenticates with. The network allowlist limits
