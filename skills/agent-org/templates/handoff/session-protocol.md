@@ -3,7 +3,8 @@
 ## Opening a session
 1. Read `vault/Home.md`, then the newest `vault/Sessions/` note, then MEMORY.md (auto-loaded).
 2. Run `lanes.sh <ORG_ROOT> status`. Read each lane's `owner-questions.md` tail, and the event-feed
-   backlog since the last session.
+   backlog since the last session: above all `DONE NOT verified` (a halted lane), `RECONCILED`,
+   `RECOVERED` and `UNISOLATED`.
 3. Answer what you can from the owner's standing rulings (`.claude/rules/owner-rulings.md`, then the lane's
    `rulings.md`). Relay what you can't to the owner, in plain
    words, with images.
@@ -29,7 +30,8 @@
 2. Update the `Home.md` NOW table if the facts changed. Promote lane LEARN entries that hold beyond
    the lane into the "Promoted lessons" block of `vault/Index.md` (between its PROMOTED markers — the
    generator carries that block verbatim; anything outside it is regenerated).
-3. Answer every open proposal (`node scripts/propose.mjs --list`) with a measurement or a decision note.
+3. Answer every open proposal (`node scripts/propose.mjs --list`, plus the ones sandboxed workers put in
+   their reports' `## Open questions`) with a measurement or a decision note.
 4. `bash scripts/gates/org-board.sh` (must exit 0), then commit with `Authority: owner|supervisor` if
    protected paths changed. Push to main only if the owner allowed it (a push to main may deploy);
    otherwise git-sync carries the work to the host's lane branches.
