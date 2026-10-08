@@ -4,6 +4,7 @@
 # The real lane loop (supervise.py) runs a HOSTILE fake worker inside the sandbox runtime (`srt`); every attack the
 # audit reproduced is attempted, and the outcome is judged from real state afterwards, not from the fake's claims.
 #   bash scripts/test-adv-isolation.sh       KEEP=1 keeps the sandbox; SRT=<path> picks the runtime;
+#   ISOLATION_MODE=none runs the same attacks with the sandbox off: CI's control step, which must go red.
 #   REQUIRE_SANDBOX=1 makes "the sandbox cannot run here" a FAILURE instead of a SKIP (CI sets it where it must run).
 # Every check fails on main@e318f8b (no isolation): see the commit message for the control run.
 set -u
@@ -109,7 +110,7 @@ cat > "$ORG/org.json" <<EOF
   "supervisor": { "backend": "script", "command": "$SB/sup.sh" },
   "worker_models": { "opus": "fake-model" }, "default_worker_model": "opus",
   "agent_timeout_s": 120, "report_overdue_s": 600, "poll_interval_s": 1, "idle_wait_s": 2,
-  "isolation": { "mode": "srt", "srt_bin": "$SRT" } }
+  "isolation": { "mode": "${ISOLATION_MODE:-srt}", "srt_bin": "$SRT" } }
 EOF
 cp "$ORG/org.json" "$SB/org.json.orig"
 bash "$KIT/scripts/lanes.sh" "$ORG" new t "adversarial goal" 2 true > /dev/null || { echo "lanes.sh new failed"; exit 2; }
@@ -153,7 +154,7 @@ PY
 rm -f "$L/out/hostile/attacks.txt"
 src=0; (cd "$L" && ORG_ROOT=$ORG tmo 90 python3 "$ORG/supervise.py" "$L" 3 > "$SB/sup.out" 2>&1) || src=$?
 S=$L/home/_supervisor/attacks.txt
-check "the supervisor consult ran inside the sandbox and ended the lane (rc $src)" "[ $src = 0 ] && has $L/lane.log 'supervisor declared DONE' && [ -s $S ]"
+check "the supervisor consult ran inside the sandbox and ended the lane (rc $src)" "[ $src = 0 ] && has $L/lane.log 'DONE claimed by the supervisor' && [ -s $S ]"
 check "A10: the supervisor cannot read the owner's ~/.ssh" "has $S 'blocked ssh-read'"
 check "A10: the supervisor cannot exfiltrate over the network" "has $S 'blocked exfil' && [ ! -s $SB/exfil.log ]"
 check "A10: the supervisor cannot write rulings or the state DB" "has $S 'blocked rulings-write' && has $S 'blocked statedb-write' && cmp -s $L/rulings.md $SB/rulings.orig"
