@@ -136,5 +136,19 @@ done < "$SB/steps.txt"
 check "A3 a PR whose own plan-ownership gate is neutered still fails the PR's plan-ownership step" "[ \"$po_rc\" = 1 ]"
 cd "$REPO" || exit 2
 
+# Coordinator commits are skipped BY SHA from the org store (promote.py --trusted-commits), never by message:
+# a lane commit that copies the coordinator's regeneration subject and edits Index.md is still a lane change.
+lane mimic "vault: regenerate hubs and index (coordinator)" "printf '\n- forged binding lesson\n' >> vault/Index.md"
+landgate mimic
+check "TC a lane commit that copies the coordinator's subject is still refused (Index.md)" "[ $LG_RC = 1 ]"
+git checkout -q mimic; sha=$(git rev-parse HEAD); printf '%s\n' 0000000000000000000000000000000000000000 > "$SB/trusted.txt"
+git checkout -q main -- scripts/gates scripts/lib 2>/dev/null
+out=$(node scripts/gates/plan-ownership.mjs --since main --lane --trusted-commits "$SB/trusted.txt" 2>&1); rc=$?
+check "TC ...even with a trusted-commits list that does not name its SHA" "[ $rc = 1 ]"
+printf '%s\n' "$sha" > "$SB/trusted.txt"
+out=$(node scripts/gates/plan-ownership.mjs --since main --lane --trusted-commits "$SB/trusted.txt" 2>&1); rc=$?
+check "TC control: the same commit is skipped only when the store names its exact SHA" "[ $rc = 77 ] || { [ $rc = 0 ] && printf '%s' \"\$out\" | grep -q 'skip'; }"
+git checkout -q -f main
+
 echo "== $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

@@ -20,6 +20,9 @@ process.stdout.on('error', (e) => { if (e && e.code === 'EPIPE') process.exit(0)
  *   node scripts/gates/plan-ownership.mjs           # grade HEAD's landing range
  *   node scripts/gates/plan-ownership.mjs --since <rev>
  *   node scripts/gates/plan-ownership.mjs --since <rev> --lane    # a LANE's landing (supervise.py)
+ *   … --trusted-commits <file>   # promote.py only: full SHAs of the coordinator's own commits (hub/Index
+ *                                # regeneration), read from the org store a worker cannot write; skipped, by SHA
+ *                                # (never by message: a lane commit that copies the coordinator's subject is graded)
  *
  * --lane: the range is a lane's work (agent and integration commits) on its way to main. A
  * commit message is written by whoever made the commit, so in a lane's range `Authority: owner`
@@ -34,6 +37,7 @@ process.stdout.on('error', (e) => { if (e && e.code === 'EPIPE') process.exit(0)
  * all) · 2 refused · 77 empty range (a skip, never a pass).
  */
 import { execFileSync } from 'node:child_process'
+import fs from 'node:fs'
 import path from 'node:path'
 // Imported, not restated: one declaration shared with the hook.
 import { protectedHit } from '../lib/protected-paths.mjs'
@@ -47,8 +51,17 @@ const CLAIM = /^\s*(Authority:\s*(supervisor|owner)|Proposal:\s*#\d+)\s*$/mi
 
 const argv = process.argv.slice(2)
 let since = null, lane = false
+const trusted = new Set()
 for (let i = 0; i < argv.length; i++) {
   if (argv[i] === '--lane') { lane = true; continue }
+  if (argv[i] === '--trusted-commits') {
+    const f = argv[++i]
+    if (!f) { console.log('plan-ownership: --trusted-commits needs a file'); process.exit(2) }
+    let text
+    try { text = fs.readFileSync(f, 'utf8') } catch (e) { console.log(`plan-ownership: --trusted-commits ${f}: ${e.message}`); process.exit(2) }
+    for (const l of text.split('\n')) { const s = l.trim(); if (/^[0-9a-f]{40}$/.test(s)) trusted.add(s) }
+    continue
+  }
   if (argv[i] === '--since') {
     since = argv[++i]
     // A flag that is ignored is worse than one that is rejected: the caller believes it
@@ -56,7 +69,7 @@ for (let i = 0; i < argv.length; i++) {
     if (!since) { console.log('plan-ownership: --since needs a rev'); process.exit(2) }
     continue
   }
-  console.log(`plan-ownership: unrecognised argument '${argv[i]}' — accepts: --since <rev> --lane`)
+  console.log(`plan-ownership: unrecognised argument '${argv[i]}' — accepts: --since <rev> --lane --trusted-commits <file>`)
   process.exit(2)
 }
 const git = (...a) => execFileSync('git', a, { cwd: ROOT, encoding: 'utf8', env: noGitEnv() }).trim()
@@ -86,6 +99,7 @@ if (!shas.length) {
 let failed = 0, touched = 0
 console.log(`PLAN-OWNERSHIP — ${shas.length} commit(s) in ${range}${lane ? ' (a lane landing: no claim is accepted)' : ''}`)
 for (const sha of shas) {
+  if (trusted.has(sha)) { console.log(`  skip ${sha.slice(0, 9)} the coordinator's own commit (recorded in the org store)`); continue }
   // --root so a repository's FIRST commit lists its files too (it has no parent to diff).
   const files = git('show', '--root', '--name-only', '--format=', sha).split('\n').filter(Boolean)
   const hits = files.filter((f) => protectedHit(f))

@@ -185,6 +185,21 @@ def regenerate(org, wt, why):
             wt, env=org.commit_env)
 
 
+def coordinator_commits(org):
+    """Full SHAs of the coordinator's own regeneration commits that reached a target: the candidate of every
+    promoted promotion whose graded commit differs from it. Read from the org store, which no worker can write,
+    so a lane commit that merely copies the coordinator's subject line is still graded."""
+    rows = org.conn.execute(
+        "SELECT v.payload FROM events v WHERE v.type='promotion.verifying' AND v.entity IN "
+        "(SELECT entity FROM events WHERE type='promotion.promoted')").fetchall()
+    shas = set()
+    for (payload,) in rows:
+        d = json.loads(payload)
+        if d.get("candidate_sha") and d.get("candidate_sha") != d.get("graded_sha"):
+            shas.add(d["candidate_sha"])
+    return sorted(shas)
+
+
 def gate_env(org):
     return {**os.environ, "ORG_MAIN_BRANCH": org.main}
 
@@ -307,8 +322,15 @@ def promote(org, op, lane_root, ref, consult):
             git(wt, "checkout", "-q", trusted, "--", "scripts/gates", "scripts/lib", check=True)
             lane_mode = "--lane" in (out(wt, "show", f"{trusted}:scripts/gates/plan-ownership.mjs") or "")
             failed, parts = [], []
+            trusted_file = None
+            if lane_mode and "--trusted-commits" in (out(wt, "show", f"{trusted}:scripts/gates/plan-ownership.mjs") or ""):
+                trusted_file = os.path.join(org.root, "state", "tmp", f"{prom}.trusted-commits")   # coordinator-only: ORG_ROOT is outside every sandbox
+                with open(trusted_file, "w") as fh:
+                    fh.write("\n".join(coordinator_commits(org)) + "\n")
             for g, args in GATES:
                 argv = [a.format(base=since, lane="--lane" if lane_mode else "") for a in args]
+                if g == "plan-ownership" and trusted_file:
+                    argv += ["--trusted-commits", trusted_file]
                 ver, code, tail = verification(org, prom, "gate", g, [a for a in argv if a], wt, out(wt, "rev-parse", "HEAD^{tree}"),
                                                graded, 600, env=gate_env(org))
                 ok = code in (0, 77)
