@@ -232,6 +232,27 @@ check "metrics: merges/lands/kills/no-action/missing" "[ $(m t merges_ok) = 1 ] 
 check "metrics: legacy HH:MM lines dated across midnight" \
   "printf '%s' \"\$json\" | python3 -c \"import json,sys; o=json.load(sys.stdin)['old']; assert o['2026-10-01']['dispatches']==1 and o['2026-10-02']['rc_timeouts']==1 and o['2026-10-02']['med_finish_min']==15 and o['2026-10-02']['med_merge_min']==25\""
 
+# coordinator-era lines (promote.py refusals, crash reconciliation, DONE verdicts, quarantine, unisolated runs)
+mkdir -p "$ORG/lanes/coord"
+cat > "$ORG/lanes/coord/lane.log" <<'LOG'
+2026-10-08 10:00 MERGE lane/coord/a REFUSED — CONFLICT merging lane/coord/a into lane/coord/integration: src/x
+2026-10-08 10:01 MERGE lane/coord/b REFUSED — verification failed on the merged candidate abc1234 (1 of 4 failed)
+2026-10-08 10:02 MERGE lane/coord/c ok (abc1234, PROM-0003)
+2026-10-08 10:03 RECONCILED: PROM-0002 was promoted before the crash; the supervisor is told
+2026-10-08 10:04 DONE claimed by the supervisor
+2026-10-08 10:04 DONE NOT verified — AC-0001 failed on main — lane halted, mission not complete
+2026-10-08 10:05 DONE verified: every criterion passes on main
+2026-10-08 10:06 RECOVERED a: 2 uncommitted path(s) quarantined to recovered/x.patch
+2026-10-08 10:07 PIDFILE UNREADABLE b: quarantined to pids/bad/ — its agent may still be running; not adopted
+2026-10-08 10:08 agent c: UNISOLATED (isolation.mode=none) — it can read and write everything this user can
+LOG
+json2=$(python3 "$ORG/lane-metrics.py" "$ORG" --days 0 --json)
+m2() { printf '%s' "$json2" | python3 -c "import json,sys; d=json.load(sys.stdin)['coord']; print(sum((r.get(sys.argv[1]) or 0) for r in d.values()))" "$1"; }
+check "metrics: coordinator refusals counted (merges refused 2, of them conflicts 1), reconciliations, DONE verdicts" \
+  "[ \"\$(m2 merges_refused)\" = 2 ] && [ \"\$(m2 merge_conflicts)\" = 1 ] && [ \"\$(m2 merges_ok)\" = 1 ] && [ \"\$(m2 reconciled)\" = 1 ] && [ \"\$(m2 done_verified)\" = 1 ] && [ \"\$(m2 done_not_verified)\" = 1 ]"
+check "feed: RECONCILED, RECOVERED, PIDFILE UNREADABLE and UNISOLATED reach the event feed" \
+  "[ \"\$(grep -E \"\$EVENTS\" $ORG/lanes/coord/lane.log | grep -cE 'RECONCILED|RECOVERED|PIDFILE UNREADABLE|UNISOLATED')\" = 4 ]"
+
 # ── lane-events.sh: offsets without bash-4 arrays (macOS /bin/bash is 3.2) ──
 echo "== lane-events.sh under /bin/bash ($(/bin/bash -c 'echo $BASH_VERSION'))"
 mkdir -p "$ORG/logs"; printf '%s 0\n' "$L/lane.log" > "$ORG/logs/lane-events.state"

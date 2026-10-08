@@ -3,8 +3,9 @@
 
   python3 lane-metrics.py <ORG_ROOT> [--days N] [--json]
 
-Columns: consults, dispatches, finished, report missing, rc timeouts (124), merges ok, merge conflicts, lands,
-lands refused/conflicted, KILLs, NO ACTIONABLE BLOCK, median dispatch→finish and dispatch→merge minutes.
+Columns: consults, dispatches, finished, report missing, rc timeouts (124), merges ok, merges refused (of them
+conflicts), lands, lands refused, KILLs, NO ACTIONABLE BLOCK, reconciled promotions, DONE verified / not verified,
+median dispatch→finish and dispatch→merge minutes.
 Log lines are "YYYY-MM-DD HH:MM msg". Older "HH:MM msg" lines are dated from their neighbours: forward from
 the last dated line before them, backward from the first dated line after them (or from the log's mtime if
 no line is dated), a day changing whenever the clock runs the other way. The loop logs at least every idle
@@ -20,11 +21,15 @@ COUNTS = [  # (column, pattern on the message)
     ("report_missing", r"^agent \S+ finished rc=\S+ report=MISSING"),
     ("rc_timeouts", r"^agent \S+ finished rc=124 "),
     ("merges_ok", r"^MERGE \S+ ok"),
-    ("merge_conflicts", r"^MERGE \S+ CONFLICT"),
+    ("merges_refused", r"^MERGE \S+ REFUSED"),                     # promote.py: scope, gates, verification, conflict
+    ("merge_conflicts", r"^MERGE \S+ (?:REFUSED — )?CONFLICT"),       # "REFUSED — CONFLICT …" (coordinator) or older "CONFLICT"
     ("lands", r"^LAND \S+ ok"),
     ("lands_refused", r"^LAND \S+ (REFUSED|CONFLICT)"),
     ("kills", r"^KILLED \S+"),
     ("no_action", r"^NO ACTIONABLE BLOCK"),
+    ("reconciled", r"^RECONCILED"),                                  # a promotion interrupted by a crash, settled on restart
+    ("done_verified", r"^DONE verified"),
+    ("done_not_verified", r"^DONE NOT verified"),
 ]
 COLS = [c for c, _ in COUNTS] + ["med_finish_min", "med_merge_min"]
 
@@ -86,7 +91,9 @@ def main():
     if a.json:
         print(json.dumps(out, indent=1))
         return
-    heads = ["lane", "day", "cons", "disp", "fin", "norep", "t/o", "merge", "confl", "land", "refus", "kill", "noact", "fin_m", "mrg_m"]
+    heads = ["lane", "day", "cons", "disp", "fin", "norep", "t/o", "merge", "mrefus", "confl", "land", "lrefus", "kill", "noact",
+             "recon", "done", "!done", "fin_m", "mrg_m"]
+    assert len(heads) == 2 + len(COLS)   # one head per column, positionally
     table = [[lane, day] + ["-" if r[c] is None else str(r[c]) for c in COLS] for lane, rows in out.items() for day, r in rows.items()]
     widths = [max(len(x) for x in col) for col in zip(heads, *table)]
     for line in [heads] + table:
