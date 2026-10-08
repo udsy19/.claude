@@ -42,6 +42,23 @@ const ROOT = process.env.CLAUDE_PROJECT_DIR ||
 
 function read(p) { try { return fs.readFileSync(p, 'utf8') } catch { return null } }
 
+// A path INSIDE the project is matched relative to its root, so the project's own location cannot make every file
+// look protected (a checkout under …/.claude/.claude/skills/… contains the protected ".claude/skills/" as an
+// ancestor). Compared against the root and its real path (macOS /var -> /private/var), resolving the target's nearest
+// existing parent. A path OUTSIDE the project keeps the conservative substring match (another checkout's rules file is
+// still refused): that side fails closed.
+const ROOTS = [...new Set([path.resolve(ROOT), (() => { try { return fs.realpathSync(ROOT) } catch { return path.resolve(ROOT) } })()])]
+function inProject(t) {
+  if (typeof t !== 'string' || !path.isAbsolute(t)) return t
+  const under = (p) => { for (const b of ROOTS) { const r = path.relative(b, p); if (r && !r.startsWith('..') && !path.isAbsolute(r)) return r } return null }
+  let r = under(path.resolve(t))
+  if (r !== null) return r
+  let p = path.resolve(t), tail = ''
+  while (!fs.existsSync(p) && path.dirname(p) !== p) { tail = path.join(path.basename(p), tail); p = path.dirname(p) }
+  try { r = under(path.join(fs.realpathSync(p), tail)) } catch { r = null }
+  return r !== null ? r : t
+}
+
 let raw = ''
 try { raw = fs.readFileSync(0, 'utf8') } catch { process.exit(0) }
 let ev = {}
@@ -66,7 +83,7 @@ function stringsIn(v, depth = 0, out = []) {
   else if (v && typeof v === 'object') for (const k of Object.keys(v)) stringsIn(v[k], depth + 1, out)
   return out
 }
-const payloadStrings = target ? [target] : stringsIn(ev.tool_input)
+const payloadStrings = (target ? [target] : stringsIn(ev.tool_input)).map(inProject)
 // Fail closed: a missing or unknown role is a subagent, and a lane process is never an author,
 // whatever ORG_ROLE says (a worker can set its own environment).
 const laneProcess = !!(process.env.AGENT_ORG_HEADLESS || process.env.AGENT_NAME)

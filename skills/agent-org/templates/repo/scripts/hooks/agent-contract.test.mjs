@@ -98,6 +98,19 @@ check('(c) Bash is never gated', run({ session_id: sid(), tool_name: 'Bash', too
   check('(e) a//b is refused', owned(ROOT + '/vault//Plan.md'))
   check('(e) a relative path is refused', owned('vault/Plan.md'))
   check('(e) an ordinary source file is still allowed', !owned(path.join(ROOT, ORDINARY)))
+  // A project whose OWN location contains a protected segment (CI checks out at …/.claude/.claude/skills/…): matching
+  // is relative to the project root, so an ancestor directory never makes every file protected.
+  {
+    const nest = fs.mkdtempSync(path.join(os.tmpdir(), 'org-nest-'))
+    const proj = path.join(nest, '.claude', '.claude', 'skills', 'proj')
+    fs.mkdirSync(path.join(proj, 'vault'), { recursive: true })
+    fs.copyFileSync(path.join(ROOT, 'vault/AGENTS.md'), path.join(proj, 'vault/AGENTS.md'))
+    const inNest = (f, s) => run({ session_id: s, tool_name: 'Edit', tool_input: { file_path: path.join(proj, f) } }, { CLAUDE_PROJECT_DIR: proj })
+    const sn = sid(); inNest(ORDINARY, sn)                       // the once-per-session contract delivery
+    check('(e) under a …/.claude/.claude/skills/… ancestor, an ordinary file is still allowed', inNest(ORDINARY, sn).code === 0)
+    check('(e) …and the plan is still refused there', inNest('vault/Plan.md', sn).code === 2)
+    fs.rmSync(nest, { recursive: true, force: true })
+  }
   check('(e) an unrelated /tmp file is still allowed', !owned('/tmp/org-scratch-xyz.txt'))
   // MALFORMED PAYLOADS must not crash the hook — an uncaught throw exits 1, which a
   // PreToolUse hook treats as non-blocking, i.e. the write PROCEEDS.
