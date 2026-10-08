@@ -45,13 +45,14 @@ the first call with "Accept all defaults (default)" / "Choose each answer"; on a
    them" (free text via Other).
 4. Main branch: the inferred one, e.g. "main (default)", confirmed or replaced.
 
-**Tier 3 (org).** Run `skills/agent-org/SKILL.md` §1, questions 1–8 (runtime and host, worker user, models,
-lanes, rulings, daily spend caps, what has not worked), skipping what tiers 1–2 already answered. Do not keep a second copy of
+**Tier 3 (org).** Run `skills/agent-org/SKILL.md` §1, questions 1–10 (runtime and host, worker user, models,
+lanes, rulings, daily spend caps, what has not worked, the verify commands, the Definition of done), skipping what tiers 1–2 already answered. Do not keep a second copy of
 those questions here: §1 is the one interview. From the answers build `vars` (the §2.1 keys) and `org` (the
 `org.json` fields: `runtime`, `host` — empty when the org runs on this machine — `worker_user`, `claude_bin`,
 `supervisor`, `worker_models`, `default_worker_model`, `build_queue`, `sync`, and the three caps
 `max_consults_per_day`, `max_agent_starts_per_day`, `max_agent_hours_per_day` — always, even when the owner
-accepted the defaults), and `org_root`.
+accepted the defaults — and `verify`, which is mandatory: without it every MERGE and LAND is refused),
+and `org_root`. The Definition-of-done rows go into the mission file (SKILL.md §2 step 2b).
 
 ## 3. Summary, then a yes
 
