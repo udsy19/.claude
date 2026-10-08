@@ -95,8 +95,9 @@ node scripts/propose.mjs --row 15 --kind split \
   --why "row 15 is 10-20 subtasks, not one; here is the decomposition"
 ```
 
-That appends to `vault/_log/proposals.jsonl` (in the main checkout, even from a worktree) and
-tells the supervisor. The supervisor must then do one of exactly two things, and record which:
+In an interactive session that appends to `vault/_log/proposals.jsonl` in the main checkout and
+tells the supervisor. A sandboxed lane worker cannot reach the main checkout: it writes the same
+proposal (row, kind, why) under `## Open questions` in its report, and its supervisor relays it. The supervisor must then do one of exactly two things, and record which:
 
 - **reject it citing a measurement** — not an opinion, a number or a file;
 - **commission research**, then rule, and write the ruling to `vault/Decisions/`.

@@ -26,8 +26,10 @@ exists: don't re-run setup. Follow `KIT/templates/handoff/session-protocol.md`, 
 changes.
 
 **Requirements:** git, Node ≥ 16, Python ≥ 3.8, bash (3.2 is fine). On the runtime host also tmux, rsync,
-`claude`, and `codex` for a codex supervisor; flock only if `build_queue.wrap` installs the build queue.
-`bootstrap-host.sh` checks these.
+`claude`, `codex` for a codex supervisor, flock only if `build_queue.wrap` installs the build queue, and the
+sandbox runtime every agent runs in: `npm i -g @anthropic-ai/sandbox-runtime` (`srt`; on Linux also
+`bubblewrap socat ripgrep`, and on Ubuntu 24.04+ the bwrap AppArmor profile in `docs/isolation.md`).
+`bootstrap-host.sh` checks these and prints the fix.
 
 ## 0. Before anything: read
 Read `docs/HIERARCHY.md` (the why, the failure modes, the file list) and `templates/memory/memory-guide.md`.
@@ -70,6 +72,16 @@ verbatim:
    are sampled by the loop and undercount (never overcount): a backstop, not a billing meter.
 8. **What has NOT worked so far.** Ask this; it is what stops agents repeating history. Default: "nothing
    recorded yet" (a new project).
+9. **How the org verifies work** (`org.json` `verify`: shell commands the coordinator runs at the repo root on
+   every MERGE and LAND candidate, e.g. `npm test`, `cargo test`, a smoke script; each a string or
+   `{"name", "run", "timeout_s"}`). Mandatory: with none, every MERGE and LAND is refused. They live in
+   `org.json`, outside the repo, so a lane can't change what judges it. Default: the project's own test
+   command, inferred from the repo and confirmed with the owner.
+10. **When is the mission done** (the mission's "Definition of done" table: one row per property, with a
+    command in backticks that proves it, or a manual check the owner accepts). A `DONE` from a supervisor is
+    only a claim: the coordinator checks every row on main's current tree, and an empty table means the
+    mission can never be verified done. Default: one row per acceptance-bar sentence, each with the
+    command that shows it, filled before the lanes start.
 
 Then show a one-screen summary (lanes table, models, runtime, rules) and get a yes before writing anything.
 The installer records that yes: it writes the mission with `accepted-by: owner` (gate-independence law 9),
@@ -112,11 +124,17 @@ command installs it. Never hand-copy pieces of it.
 2. **Owner rulings** live in `<repo>/.claude/rules/owner-rulings.md` (the four defaults plus
    `EXTRA_RULINGS`): the one standing source, versioned and protected. A later ruling is a line there in
    the owner's words, committed with `Authority: owner`. The kit installs seven rules: gate-independence,
-   no-bloat, goals-not-tests, vault-first, evidence-and-honesty, protected-paths, owner-rulings. If the
-   owner names more protected paths (the kit protects `vault/Plan.md`, `vault/Roadmap.md`,
-   `vault/Decisions/`, `.claude/rules/` and `.claude/settings.json`), add them to
-   `scripts/lib/protected-paths.mjs` (the ONE declaration) and to the four documents
+   no-bloat, goals-not-tests, vault-first, evidence-and-honesty, protected-paths, owner-rulings. The kit
+   protects (`scripts/lib/protected-paths.mjs`, the ONE declaration) the plan, roadmap, decisions, missions
+   and vision, `vault/Index.md`, the vault contracts and every `CLAUDE.md`, `.claude/` (rules, agents,
+   skills, settings), `.mcp.json`, the gates, hooks and their libraries, and `.github/workflows/`. A lane
+   never lands a change to any of them, whatever its commit trailers say; the owner or overseer changes
+   them on main. If the owner names more protected paths, add them there and to the four documents
    `scripts/gates/protected-paths.mjs` holds to it.
+2b. **The Definition of done.** Fill the `## Definition of done` table in `vault/Missions/<mission>.md`
+   from question 10 (key | property | check: a backticked command, or plain text for a manual criterion)
+   and commit it with the set-up (`Authority: owner`). It is protected, so only the owner or overseer
+   changes it later.
 3. **CLAUDE.md:** append `KIT/templates/claude/CLAUDE.project-snippet.md` (filled: `HOST`, `ORG_ROOT`) to
    `<repo>/CLAUDE.md`, or create it. Skip this if `CLAUDE.md` already contains the snippet's first heading
    (a re-run must not duplicate it).
@@ -155,7 +173,11 @@ user (clone it as them).
    `real.<tool>` for a binary PATH can't find), `worktree_links` (git-ignored paths only — a tracked path is
    skipped and logged), `state_backup.include` (extra lane paths for the snapshot), the per-lane daily caps
    `max_consults_per_day` / `max_agent_starts_per_day` / `max_agent_hours_per_day`, `agent_timeout_s`,
-   `consult_timeout_s` and `usage_limit_wait_s`.
+   `consult_timeout_s` and `usage_limit_wait_s`. **`verify`** (question 9) is mandatory: without it the
+   coordinator refuses every MERGE and LAND. **`isolation`** (`docs/isolation.md`): `mode` `srt` (default;
+   `none` runs agents unsandboxed and is for test fixtures), `srt_bin`, `allowed_domains` (package
+   registries; keep it narrow), `allow_read` / `allow_write` (e.g. toolchains under HOME), and
+   `auth_token_file` (default `<ORG_ROOT>/secrets/claude-oauth-token`, mode 600).
 2. Copy `KIT/scripts/` and `KIT/templates/lane/` to the host (keeping that layout), then run
    `bootstrap-host.sh <ORG_ROOT>` (`setup.mjs --bootstrap` runs it when the org runs on this machine):
    - **local:** as yourself. Refused as root, and refused with a `worker_user` (on macOS, or with
@@ -169,9 +191,15 @@ user (clone it as them).
    and schedules the hourly job (`lanes.sh gc`, then `state-snapshot.sh`): a launchd agent on macOS (a run
    missed asleep runs on wake), else the crontab (lines tagged `# agent-org <ORG_ROOT>`; other lines are
    never touched), else a `systemd --user` timer, else a tmux loop that does not survive a reboot.
+   It also copies the promotion coordinator (`promote.py`) and the state store (`orgstate.py`) into
+   `<ORG_ROOT>`; the org's canonical state lives in `<ORG_ROOT>/state/` (`org.db`, `artifacts/`) and is
+   exported to the repo's `state/journal` branch after every promotion (the P0 seed of the vault control
+   plane; the full design is under review on branch `p0-design`, `docs/control-plane.md`).
    **Logins are the owner's** (interactive, in their own terminal, never pasted into chat):
-   - local: `claude` → `/login`; remote: `su - <worker> -c claude` → `/login` (or `claude setup-token`
-     for a long-lived token);
+   - agents run in the sandbox with their own HOME, so they don't see the user's login: the owner runs
+     `claude setup-token` (as the org's user; remote: `su - <worker> -c 'claude setup-token'`) and saves
+     the token to `isolation.auth_token_file`; the loop hands it to each agent as `CLAUDE_CODE_OAUTH_TOKEN`
+     in its environment, never in an argv;
    - `codex login --device-auth`, as the same user, if the supervisor is codex.
 
    Re-run the bootstrap's login check until both pass.
@@ -190,7 +218,7 @@ user (clone it as them).
 
 ## 5. Become the overseer
 0. Give this session the overseer's role: write `{"env": {"ORG_ROLE": "supervisor"}}` to
-   `<repo>/.claude/settings.local.json` (merge if it exists; it is untracked, so worker worktrees never
+   `<repo>/.claude/settings.local.json` (merge if it exists; it is untracked, so worker workspaces never
    inherit it), then ask the owner to restart Claude Code in the repo. Without it the contract hook treats
    you as a subagent and refuses your edits to protected paths.
 1. Arm a Monitor on `ssh <host> 'bash <ORG_ROOT>/lane-events.sh <ORG_ROOT>'` (or a local `bash …`) with
@@ -205,6 +233,9 @@ Verify all of these before telling the owner it works:
 - every lane logged `=== CONSULT 1` and dispatched at least one worker;
 - a worker has written a checkpoint report that opens with a Vault check;
 - git-sync pushed a lane branch;
+- a MERGE went through the coordinator (`MERGE … ok (<sha>, PROM-n)` in the lane log) and
+  `python3 <ORG_ROOT>/orgstate.py <ORG_ROOT> verify` exits 0;
+- no agent was logged `UNISOLATED` (unless the owner chose `isolation.mode: none`);
 - the state snapshot ran once (run `state-snapshot.sh` manually);
 - the auth probe is green;
 - `bash scripts/gates/org-board.sh` exits 0 in the repo (its skips named), and the set-up commit passes
@@ -216,7 +247,10 @@ it (`lanes.sh <ORG_ROOT> stop <lane>`).
 ## Never
 - Never hand-edit `vault/Map.md`, the folder hubs or `vault/Index.md` (outside its promoted-lessons
   block): they are generated. Regenerate them.
-- Never commit to a protected path without `Authority: owner|supervisor` or `Proposal: #<n>`.
+- Never commit to a protected path without `Authority: owner|supervisor` or `Proposal: #<n>`, and only as
+  the owner or overseer on main: a lane's landing never carries one.
+- Never weaken a gate, a test or a `verify` command to get a promotion through, never change acceptance
+  criteria to fit what was built, and never accept a manual criterion on the owner's behalf.
 - Never put secrets in chat, git or the vault. Owners type tokens into their own terminals.
 - Never push to main or deploy unless the owner said a landing may deploy (that includes git-sync's
   `push_main`).

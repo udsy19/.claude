@@ -17,7 +17,7 @@ only on the build box cannot be read by an agent on the laptop, reviewed in a di
 gate.
 
 Run as `ORG_ROLE=supervisor`: the set-up writes it to the untracked `.claude/settings.local.json`,
-so worker worktrees never inherit it. That is what lifts the ownership hook — and it is the only
+so worker workspaces never inherit it. That is what lifts the ownership hook — and it is the only
 thing that does, so never export it for a subagent. The owner runs as `ORG_ROLE=owner`.
 
 ---
@@ -76,7 +76,7 @@ prompt is the ONLY channel you compose fresh every time.
 
 - **Never order an edit to a protected path.** Say instead: *when the row is progressed, file it
   with `scripts/propose.mjs`.*
-- **Never dispatch without a worktree, a port and a branch.** An agent in the shared checkout
+- **Never dispatch without its own workspace, a port and a branch.** An agent in the shared checkout
   watches HEAD move under it mid-task.
 - **Never omit what is NOT on main.** A row whose acceptance names a symbol that lives only on an
   unlanded branch sends the agent looking for it on main; it concludes nothing exists and writes a
@@ -125,10 +125,12 @@ decision is that it gets made again, worse, by someone with less context.**
 4. Lift durable findings into the vault (a report, a decision), regenerate the hubs and the Index,
    and keep [[Home]] NOW true.
 
-A lane supervisor's `LAND` is gated by its loop instead: it needs main checked out in the repo and
-`plan-ownership.mjs`, `sprawl.mjs` and `protected-paths.mjs` passing on the candidate (with main's gate
-code); a refusal is the lane's `reports/NNNN-zz-land-refused-<branch>.md` and a `REFUSED` line in the
-event feed. Read it before landing that branch by hand.
+A lane supervisor never lands anything itself: its `LAND` is a request to the promotion coordinator
+(`scripts/promote.py` in `ORG_ROOT`), which lands only that lane's `lane/<lane>/integration`, builds main +
+that branch in a throw-away worktree, runs `plan-ownership.mjs --lane`, `sprawl.mjs` and
+`protected-paths.mjs` with main's gate code and every org.json `verify` command on that exact tree, and
+moves main by compare-and-swap. A refusal is the lane's `reports/NNNN-zz-land-refused-<branch>.md` and a
+`REFUSED` line in the event feed. Read it before landing that branch by hand.
 
 ## 7. What you are actually optimising
 
