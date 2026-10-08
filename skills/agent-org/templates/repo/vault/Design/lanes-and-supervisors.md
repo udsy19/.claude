@@ -38,7 +38,7 @@ channel is a FILE or a tool call somebody can read afterwards.
 | from → to | channel | written by |
 |---|---|---|
 | supervisor → worker | the `=== AGENT ===` brief, prefixed with `agent-rules.md` and `context.md`, given to the worker on stdin (no prompt argument, so no size limit) | `supervise.py` from the consult |
-| worker → supervisor | the report file `reports/<round>-<name>.md` (checkpointed; opens with `## TL;DR`), images in `renders/<agent>/`, and the worker's branch | the worker |
+| worker → supervisor | the report file (written in the worker's outbox, copied by the loop to `reports/<round>-<name>.md`; checkpointed; opens with `## TL;DR`), images in `renders/<agent>/`, and the worker's branch (its clone's commits, collected at finish) | the worker |
 | worker ↔ sub-agent | the Agent tool's prompt and its return value; findings are folded into the WORKER's report | the worker |
 | supervisor → owner | `=== ASK_OWNER ===` → `owner-questions.md` (surfaced by the event feed); a daily spend cap reached is asked the same way | `supervise.py` |
 | owner → supervisor | `owner-answers.md` (raw, appended verbatim and dated) and `rulings.md` (the law in force, curated) | the overseer |
@@ -78,7 +78,8 @@ A finding that should BIND becomes a decision: the supervisor or owner writes it
 - **What a consult carries (the prompt budget).** The project's `.claude/rules/owner-rulings.md` and the
   lane's `rulings.md` in full, plus the newest 10 raw
   `owner-answers.md` entries (a lane without `rulings.md` gets the whole log); per report its `## TL;DR`,
-  first ~2k and last ~3k characters; the lane branch's `git log -15`, its `diff --stat` against main and
+  first ~2k and last ~3k characters, fenced as `UNTRUSTED WORKER REPORT` with any `===` block markers
+  neutralised; the lane branch's `git log -15`, its `diff --stat` against main and
   that of each branch just merged, landed or finished (≤ 6k chars); and up to 12 images: `renders/owner/`
   (and a legacy `renders/latest/`) always, then worker images newer than the previous consult.
 - **Weekly, the overseer compounds it:** durable LEARN entries go to the lane's `context.md` "What has
@@ -101,15 +102,16 @@ A finding that should BIND becomes a decision: the supervisor or owner writes it
 
 | file | role |
 |---|---|
-| `{{ORG_ROOT}}/supervise.py <lane-root>` | One loop per lane, run by the org's one user. **Rolling:** the supervisor is consulted whenever any worker finishes. Each worker runs in its own process group with a deadline in `pids/<name>.json`; a restarted loop adopts running workers from those files. Directives: `PLAN`, `AGENT`, `MERGE`, `LAND` (lanes with may_land), `KILL`, `ASK_OWNER`, `LEARN`, `DONE`; names and refs are validated, anything else is `REFUSED`. LAND needs `{{MAIN_BRANCH}}` checked out in the repo and the landing gates (plan-ownership, sprawl, protected-paths, run with main's gate code) to pass; a refusal is written to `reports/NNNN-zz-land-refused-<branch>.md`. Daily caps per lane (consults, agent starts, agent-hours) log `BUDGET` and idle the lane until midnight UTC; a `TOTAL` line keeps the count. Hubs are regenerated after every MERGE/LAND. Logs `NO ACTIONABLE BLOCK` and `REPORT OVERDUE` (90 min). |
+| `{{ORG_ROOT}}/supervise.py <lane-root>` | One loop per lane, run by the org's one user. **Rolling:** the supervisor is consulted whenever any worker finishes. Each worker runs inside the sandbox runtime (`docs/isolation.md` in the kit) in its own clone, its own process group, with a deadline and a launch token in `pids/<name>.json`; a restarted loop adopts running workers whose token matches. Directives: `PLAN`, `AGENT`, `KILL`, `ASK_OWNER`, `LEARN`, `DONE`; `MERGE` and `LAND` are *requests* the loop passes to the coordinator. Worker reports reach the supervisor fenced as untrusted data. |
+| `{{ORG_ROOT}}/promote.py` | The org's one promotion coordinator: the only process that moves a lane's integration branch or main, under one lock. MERGE: only a branch this lane dispatched; LAND: only `lane/<lane>/integration`, refused while main is behind or diverged from origin. It builds target + request in a throw-away worktree, regenerates hubs and Index inside it, runs the landing gates with main's code and every org.json `verify` command on that exact tree, and moves the ref by compare-and-swap. Every request, verification (log stored content-addressed) and outcome is an event in `{{ORG_ROOT}}/state/org.db`; an interrupted promotion is reconciled on the next start. `done` derives mission DONE from the Definition-of-done table on main; `accept <key>` is the owner accepting a manual criterion. No `verify` configured = every MERGE and LAND refused. |
 | `lanes/<lane>/context.md`, `supervisor-brief.md`, `agent-rules.md`, `owner-answers.md`, `rulings.md`, `lane.json` | The lane's brief and settings. The owner's answers are appended to `owner-answers.md`; the ones in force are curated into `rulings.md`. |
 | `lanes/<lane>/lane-memory.md` | The supervisor's LEARN journal (above). |
 | `lanes/<lane>/reports/`, `renders/<agent>/`, `renders/owner/`, `plan.md`, `loop-state.json` | Worker reports (`<round>-<name>.md`, zero-padded so they sort; `## TL;DR` first; checkpoint within 1 h, updated every 2 h), worker images and the owner's pinned references, the supervisor's plan, and the loop's own state (last consult time, overdue warnings, notices for the next prompt). |
-| `lanes.sh` | Lane management: `new`, `start`, `restart` (keeps workers alive), `stop`, `status`, `gc` (hourly — launchd, crontab, a systemd user timer or tmux: merged, finished worktrees + build dirs, renders > 14 days). `start` resumes a stopped lane. |
-| `lane-metrics.py` | Per-lane, per-day consults, dispatches, finishes, missing reports, timeouts, merges, conflicts, lands, KILLs, NO ACTIONABLE BLOCKs, median dispatch→finish and dispatch→merge. |
-| `git-sync.sh` | Every 5 min: fast-forwards the `main` branch from origin (merging into HEAD only when HEAD is main, else `git fetch origin main:main`; never force; DIVERGED is logged), pushes main only if `sync.push_main` (default false), and pushes every work branch. |
+| `lanes.sh` | Lane management: `new`, `start`, `restart` (keeps workers alive), `stop`, `status`, `gc` (hourly — launchd, crontab, a systemd user timer or tmux: merged, finished agent workspaces + build dirs, renders > 14 days; never a workspace a live process uses). `start` resumes a stopped lane. |
+| `lane-metrics.py` | Per-lane, per-day consults, dispatches, finishes, missing reports, timeouts, merges (ok / refused / of them conflicts), lands (ok / refused), KILLs, NO ACTIONABLE BLOCKs, reconciled promotions, DONE verified / not verified, median dispatch→finish and dispatch→merge. |
+| `git-sync.sh` | Every 5 min: hands `main` to `promote.py sync-main` (under the promotion lock: fast-forward from origin if behind, push only if `sync.push_main`, default false; never force; if both moved, DIVERGED is logged and LAND is refused until reconciled), and pushes every work branch. |
 | `state-snapshot.sh` | Hourly: copies each lane's recovery state (`plan.md`, `lane-memory*.md`, `rulings.md`, `owner-questions.md`, `lane.json`, `loop-state.json`, the lane's goal in `context.md` and `supervisor-brief.md`, `renders/owner` and `renders/latest`, plus anything in `state_backup.include`) and `org.json` reduced to an allowlist of known-safe keys (any other key is named in the snapshot log) to branch `{{STATE_BRANCH}}`, and pushes it to origin — anyone who can read origin can read it. |
-| `lane-events.sh` | The overseer's event feed: dispatches, finishes, merges, landings and `REFUSED` blocks, owner questions, usage limits, `BUDGET`/`TOTAL`, `UNFILLED`, `SUPERVISOR ERROR`, and a worker-auth probe. |
+| `lane-events.sh` | The overseer's event feed: dispatches, finishes, merges, landings and every `REFUSED`, `RECONCILED` promotions, `DONE` claimed / verified / NOT verified, `RECOVERED` leftovers, `PIDFILE UNREADABLE`, `UNISOLATED` agents, owner questions, usage limits, `BUDGET`/`TOTAL`, `UNFILLED`, `SUPERVISOR ERROR`, and a worker-auth probe. |
 | `build-queue` | Machine-wide slots for heavy builds, so parallel workers don't starve the box. |
 
 ## Failure modes this design already guards against
@@ -125,8 +127,9 @@ Each one happened in practice.
 - **Host loss:** guards: everything pushed every 5 min, hourly lane-state backup, a bootstrap kit.
 - **Root-owned `.git`:** guard: one user runs the whole org and owns the repo; nothing runs `sudo` or
   re-owns a repository.
-- **A test polluted the shared `.git/config`:** guard: never run `git config` on the shared repo.
-- **Detached-HEAD work stranded:** guard: the safety net pushes `HEAD`.
+- **A test polluted the shared `.git/config`:** guard: each worker works in its own clone, inside the sandbox.
+- **Half-done work and secrets reaching origin:** guard: no safety-net commit; an agent's uncommitted files become a local `recovered/` patch nobody merges, and only its commits are collected onto its branch.
+- **Unverified work landing:** guard: only the coordinator promotes, verifying main + candidate with the org's own `verify` commands.
 - **Worker login expired overnight:** guard: an auth probe in the event feed.
 - **Supervisor usage limit:** guard: the loop waits it out, and the feed shows it.
 - **Owner questions missed overnight:** guard: the feed shows ASK_OWNER, and the overseer must run its
@@ -142,6 +145,11 @@ Each one happened in practice.
 1. Clone the repo, as the user that will run the org.
 2. Restore `{{ORG_ROOT}}/lanes/*` from branch `{{STATE_BRANCH}}`, and `org.json` from it with the keys
    the snapshot log names as not backed up (secrets among them) re-added.
+   Rebuild the canonical state from the repo's `state/journal` branch:
+   `git -C <repo> fetch origin state/journal && mkdir -p {{ORG_ROOT}}/state && git -C <repo> archive FETCH_HEAD journal | tar -x -C {{ORG_ROOT}}/state`,
+   then `python3 {{ORG_ROOT}}/orgstate.py {{ORG_ROOT}} rebuild {{ORG_ROOT}}/state/org.db` (it prints the head;
+   `orgstate.py … verify` checks the chain). Evidence log files (`state/artifacts/`) are not in the journal:
+   the records and their hashes survive a host loss, the log files do not.
 3. Run `bootstrap-host.sh` (remote: phase 1 as root, then phase 2 as the worker).
 4. The snapshot does not carry the integration worktree: run
    `lanes.sh new <lane> "<goal>" <parallel> <may_land>` for each lane with the values in its restored
