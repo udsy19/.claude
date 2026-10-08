@@ -48,7 +48,7 @@ EOF
 chmod +x "$SB/fake-claude.sh"
 
 mkrepo() {   # mkrepo <dir>: an agent-org project (init-repo) whose product check is limit*factor <= 10, pushed to origin
-  local d=$1; git init -q --bare "$d/origin.git"; git init -q -b main "$d/repo"
+  local d=$1; git init -q --bare -b main "$d/origin.git"; git init -q -b main "$d/repo"
   ( cd "$d/repo" || exit 2; git commit -q --allow-empty -m root
     node "$KIT/scripts/init-repo.mjs" --repo "$d/repo" --vars "$SB/vars.json" > "$d/init.out" 2>&1 || exit 2
     mkdir -p src; printf 'limit=5\n' > src/a.conf; printf 'factor=1\n' > src/b.conf
@@ -180,7 +180,7 @@ check "F4d: the leftover half-merge is still there (MERGE_HEAD, y staged): nobod
 echo "== F3: main diverged from origin"
 D=$SB/f3; mkdir -p "$D"; mkrepo "$D"; mkorg "$D" a
 git -C "$D/repo" commit -q --allow-empty -m "a local landing, not pushed (push_main false)"
-git clone -q "$D/origin.git" "$D/other" && ( cd "$D/other" && git commit -q --allow-empty -m "hotfix on origin" && git push -q origin main )
+git clone -q -b main "$D/origin.git" "$D/other" && ( cd "$D/other" && git commit -q --allow-empty -m "hotfix on origin" && git push -q origin main )
 say "$D" a-1 '=== AGENT name=w model=opus ===\nx\n=== END AGENT ===\n'
 say "$D" a-2 '=== MERGE branch=lane/a/w ===\n=== LAND branch=lane/a/w ===\n=== LAND branch=lane/a/integration ===\n'
 main0=$(git -C "$D/repo" rev-parse main)

@@ -58,6 +58,7 @@ jobs:
     # No identity auto-detection on any OS: a suite that sandboxes HOME must set its own git identity
     # (Linux cannot auto-detect one; macOS can, which once hid this).
     env:
+      GIT_CONFIG_NOSYSTEM: "1"   # no system defaults either (Apple's CLT gitconfig sets init.defaultBranch=main)
       GIT_CONFIG_COUNT: "1"
       GIT_CONFIG_KEY_0: user.useConfigOnly
       GIT_CONFIG_VALUE_0: "true"
