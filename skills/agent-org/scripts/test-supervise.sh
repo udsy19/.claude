@@ -9,6 +9,7 @@
 # gc; lane-metrics (dated and legacy undated lines); single-user refusal (B1); hostile block refusal (A1);
 # supervisor allowlist (A2); worktree_links (A3); LAND on main only (B2) after the gates (B3); usage limits (B6);
 # agent lifetime without GNU timeout: restart adoption, deadlines (B8); budget caps and totals (D1/D2);
+# MERGE/LAND requested from the coordinator (promote.py; adversarial cases: test-adv-promotion.sh);
 # project owner-rulings in every consult (D7); prompts on stdin (D9).
 set -u
 KIT=$(cd "$(dirname "$0")/.." && pwd)
@@ -81,7 +82,8 @@ case "$AGENT_NAME" in
   clean)     # a justified addition: lands
     printf '# Clean note\n\nMeasured cleanly.\n' > vault/Reports/clean-note.md
     msg=$(printf 'clean: record the measurement\n\nEVIDENCE-GROWTH: vault/Reports/clean-note.md holds the measurement the lane needs, recorded once so nobody measures it again.');;
-  *) echo "$AGENT_NAME" > "work-$AGENT_NAME.txt"
+  *) echo "$AGENT_NAME" > "work-$AGENT_NAME.txt"; printf '# %s work\n\nDone.\n' "$AGENT_NAME" > "vault/Reports/$AGENT_NAME-work.md"
+     msg=$(printf '%s work\n\nEVIDENCE-GROWTH: vault/Reports/%s-work.md and work-%s.txt record what %s did, which the lane needs to judge it.' "$AGENT_NAME" "$AGENT_NAME" "$AGENT_NAME" "$AGENT_NAME")
      if [ "$AGENT_NAME" = alpha ]; then
        printf '# Alpha finding\n\nAlpha measured a thing.\n' > vault/Reports/alpha-finding.md
        msg=$(printf 'alpha work\n\nEVIDENCE-GROWTH: vault/Reports/alpha-finding.md and work-alpha.txt record what alpha measured, which the lane needs to judge the next step.')
@@ -100,7 +102,7 @@ n=\$(( \$(cat $SB/count 2>/dev/null || echo 0) + 1 )); echo \$n > $SB/count
 mkdir -p $SB/seen; cat > $SB/seen/\$n.txt
 case \$n in
   1) printf '=== PLAN ===\nplan v1\n=== END PLAN ===\n\n=== AGENT name=alpha model=opus ===\ndo alpha\n=== END AGENT ===\n\n=== AGENT name=slowpoke model=opus ===\nhang\n=== END AGENT ===\n';;
-  2) printf '=== MERGE branch=lane/t/alpha ===\n=== LAND branch=lane/t/alpha ===\n=== LEARN ===\nalpha merged\n=== END LEARN ===\n\n=== AGENT name=beta model=opus ===\ndo beta\n=== END AGENT ===\n';;
+  2) printf '=== MERGE branch=lane/t/alpha ===\n=== LAND branch=lane/t/integration ===\n=== LEARN ===\nalpha merged\n=== END LEARN ===\n\n=== AGENT name=beta model=opus ===\ndo beta\n=== END AGENT ===\n';;
   3) printf 'slowpoke is overdue.\n=== KILL name=slowpoke ===\n=== KILL name=../x ===\n=== AGENT name=../../escape model=opus ===\nx\n=== END AGENT ===\n=== AGENT name=okname model=opus base=--force ===\nx\n=== END AGENT ===\n=== MERGE branch=--force ===\n=== LAND branch=main@{1} ===\n';;
   4) printf 'I think we should wait and see what happens next.\n';;
   *) printf '=== DONE ===\n';;
@@ -110,13 +112,14 @@ chmod +x "$SB"/fake-*.sh
 
 # ── the org and one lane ──
 mkdir -p "$ORG"
-cp "$KIT/scripts/supervise.py" "$KIT/scripts/lane-metrics.py" "$ORG/"
+cp "$KIT/scripts/"{supervise.py,promote.py,orgstate.py,lane-metrics.py} "$ORG/"
 cat > "$ORG/org.json" <<EOF
 { "project": "sandbox", "repo": "$REPO", "main_branch": "main", "worker_user": "",
   "claude_bin": "$SB/fake-claude.sh",
   "supervisor": { "backend": "script", "command": "$SB/fake-sup.sh" },
   "worker_models": { "opus": "fake-model" }, "default_worker_model": "opus",
-  "agent_timeout_s": 300, "report_overdue_s": 4, "poll_interval_s": 1, "idle_wait_s": 2 }
+  "agent_timeout_s": 300, "report_overdue_s": 4, "poll_interval_s": 1, "idle_wait_s": 2,
+  "verify": [{"name": "vault-contract", "run": "test -f vault/AGENTS.md"}] }
 EOF
 bash "$KIT/scripts/lanes.sh" "$ORG" new t "sandbox goal" 2 true >/dev/null || { echo "lanes.sh new failed"; exit 2; }
 check "lanes.sh new creates rulings.md and renders/owner" "[ -f $L/rulings.md ] && [ -d $L/renders/owner ]"
@@ -131,7 +134,7 @@ printf 'PNG-owner' > "$L/renders/owner/ref-owner.png"
 # ── run the loop ──
 echo "== supervise.py (canned consults 1-5)"
 ( cd "$L" && ORG_ROOT=$ORG tmo 180 python3 "$ORG/supervise.py" "$L" 1 > "$SB/supervise.out" 2>&1 ); rc=$?
-check "loop exits cleanly on DONE (rc $rc)" "[ $rc = 0 ] && has $L/lane.log 'supervisor declared DONE'"
+check "loop exits cleanly on DONE (rc $rc)" "[ $rc = 0 ] && has $L/lane.log 'DONE claimed by the supervisor'"
 check "five consults ran" "[ \$(grep -c '=== CONSULT' $L/lane.log) = 5 ]"
 check "log lines carry the date" "grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2} === CONSULT 1' $L/lane.log"
 S=$SB/seen
@@ -150,10 +153,10 @@ check "fresh worker image shown" "has $S/2.txt renders/alpha/alpha.png && has $S
 check "stale worker image dropped" "! has $S/3.txt renders/alpha/alpha.png"
 check "worker images land in renders/<agent>/" "[ -f $L/renders/alpha/alpha.png ] && [ ! -e $L/renders/latest ]"
 # merge, land, hubs
-check "MERGE ok + hubs regenerated on the lane branch" "has $L/lane.log 'MERGE lane/t/alpha ok' && git -C $REPO log --format=%s lane/t/integration | grep -q 'vault: regenerate hubs after merge'"
+check "MERGE ok + hubs regenerated inside the candidate" "has $L/lane.log 'MERGE lane/t/alpha ok' && git -C $REPO log --format=%s lane/t/integration | grep -q 'vault: regenerate hubs and index'"
 check "merged hub lists the new note" "grep -q alpha-finding $L/int/vault/Reports/README.md"
-check "LAND ok + hubs regenerated on main" "has $L/lane.log 'LAND lane/t/alpha ok' && git -C $REPO log --format=%s main | grep -q 'vault: regenerate hubs after merge' && git -C $REPO show main:vault/Reports/README.md | grep -q alpha-finding"
-check "hub commit carries Authority: supervisor" "git -C $REPO log -1 --format=%B main | grep -q 'Authority: supervisor'"
+check "LAND of the integration branch ok + hubs on main" "has $L/lane.log 'LAND lane/t/integration ok' && git -C $REPO log --format=%s main | grep -q 'vault: regenerate hubs and index' && git -C $REPO show main:vault/Reports/README.md | grep -q alpha-finding"
+check "the hub/Index regeneration is the coordinator's own commit, on top of the graded range" "git -C $REPO log -1 --format=%s main | grep -q 'vault: regenerate hubs and index (coordinator)'"
 check "main checkout left clean" "[ -z \"\$(git -C $REPO status --porcelain)\" ]"
 # overdue, kill, no-action
 check "REPORT OVERDUE logged once" "[ \$(grep -c 'REPORT OVERDUE slowpoke' $L/lane.log) = 1 ]"
@@ -171,13 +174,14 @@ check "A1: refusals quoted back to the supervisor" "has $S/4.txt 'Your block \`A
 echo "== hub-only merge conflict"
 for h in h1 h2; do
   git -C "$REPO" worktree add -q -b "lane/t/$h" "$SB/$h" lane/t/integration
-  ( cd "$SB/$h" && printf '# Note %s\n\nText.\n' $h > vault/Reports/$h.md && node scripts/vault-hubs.mjs >/dev/null && git add -A && git commit -qm "$h with its own hubs" )
+  ( cd "$SB/$h" && printf '# Note %s\n\nText.\n' $h > vault/Reports/$h.md && node scripts/vault-hubs.mjs >/dev/null && git add -A \
+    && git commit -qm "$h with its own hubs" -m "EVIDENCE-GROWTH: vault/Reports/$h.md records note $h, which the hub-conflict case needs." )
+  python3 "$ORG/promote.py" "$ORG" dispatch "$L" "$h" "lane/t/$h" lane/t/integration >/dev/null
 done
-out=$(cd "$L" && ORG_ROOT=$ORG python3 -c "
-import sys; sys.argv = ['supervise.py', '$L']; sys.path.insert(0, '$ORG'); import supervise as s
-print(s.merge(s.INT, 'lane/t/h1', 'merge h1', 'test h1').returncode, s.merge(s.INT, 'lane/t/h2', 'merge h2', 'test h2').returncode)" | tail -1)
+out="$(python3 "$ORG/promote.py" "$ORG" request merge "$L" lane/t/h1 >/dev/null; echo $?) $(python3 "$ORG/promote.py" "$ORG" request merge "$L" lane/t/h2 >/dev/null; echo $?)"
 check "both merges succeed (rc: $out)" "[ \"$out\" = '0 0' ]"
-check "regenerated hub lists both notes" "grep -q 'Reports/h1' $L/int/vault/Reports/README.md && grep -q 'Reports/h2' $L/int/vault/Reports/README.md && ! grep -q '<<<<<<<' $L/int/vault/Reports/README.md"
+check "regenerated hub lists both notes" "git -C $REPO show lane/t/integration:vault/Reports/README.md | grep -q 'Reports/h1' && git -C $REPO show lane/t/integration:vault/Reports/README.md | grep -q 'Reports/h2' && ! git -C $REPO show lane/t/integration:vault/Reports/README.md | grep -q '<<<<<<<'"
+check "the lane's int/ worktree followed the ref" "grep -q 'Reports/h2' $L/int/vault/Reports/README.md && [ -z \"\$(git -C $L/int status --porcelain)\" ]"
 git -C "$REPO" worktree remove --force "$SB/h1"; git -C "$REPO" worktree remove --force "$SB/h2"
 
 # ── back-compat and digest units ──
@@ -236,7 +240,7 @@ check "offset saved as the file's line count" "grep -qF \"$L/lane.log \$(wc -l <
 
 # ── lanes.sh: refusal, literal goals, refill, STOP, and supervise.py's UNFILLED refusal ──
 echo "== lanes.sh new / start guards"
-ORG2=$SB/org2; mkdir -p "$ORG2/fakebin"; cp "$ORG/org.json" "$ORG/supervise.py" "$ORG2/"
+ORG2=$SB/org2; mkdir -p "$ORG2/fakebin"; cp "$ORG/"{org.json,supervise.py,promote.py,orgstate.py} "$ORG2/"
 git -C "$REPO" branch noagents "$(git -C "$REPO" commit-tree "$(git -C "$REPO" hash-object -t tree /dev/null)" -m empty)"
 python3 -c "import json,sys; d=json.load(open(sys.argv[1])); d['main_branch']='noagents'; json.dump(d,open(sys.argv[2],'w'))" "$ORG/org.json" "$SB/org-noagents.json"
 mkdir -p "$SB/orgr" && cp "$SB/org-noagents.json" "$SB/orgr/org.json"
@@ -264,7 +268,8 @@ check "start clears STOP and launches the loop" "[ ! -e $ORG2/lanes/g/STOP ] && 
 echo "== paths with a space"
 SP="$SB/sp ace"; mkdir -p "$SP"
 git init -q --bare "$SP/origin.git"; git init -q -b main "$SP/repo"
-( cd "$SP/repo" && mkdir -p vault/Reports && printf '# Agents\n' > vault/AGENTS.md && git add -A && git commit -qm init \
+( cd "$SP/repo" && git commit -q --allow-empty -m root && node "$KIT/scripts/init-repo.mjs" --repo "$SP/repo" --vars "$SB/vars.json" >/dev/null 2>&1 \
+  && rm -f .claude/rules/owner-rulings.md && git add -A && git commit -qm "set-up" -m "Authority: owner" -m "EVIDENCE-GROWTH: vault/Home.md and scripts/gates/org-board.sh arrive with the repo layer." \
   && git remote add origin "$SP/origin.git" && git push -q origin main )
 cat > "$SP/sup.sh" <<EOF
 #!/usr/bin/env bash
@@ -276,7 +281,7 @@ case \$n in
   *) printf '=== DONE ===\n';;
 esac
 EOF
-chmod +x "$SP/sup.sh"; mkdir -p "$SP/org"; cp "$ORG/supervise.py" "$SP/org/"
+chmod +x "$SP/sup.sh"; mkdir -p "$SP/org"; cp "$ORG/"{supervise.py,promote.py,orgstate.py} "$SP/org/"
 python3 -c "import json,sys; d=json.load(open(sys.argv[1])); d['repo']=sys.argv[2]; d['supervisor']['command']=sys.argv[3]; json.dump(d,open(sys.argv[4],'w'))" \
   "$ORG/org.json" "$SP/repo" "$SP/sup.sh" "$SP/org/org.json"
 bash "$KIT/scripts/lanes.sh" "$SP/org" new s "space goal" 1 false >/dev/null 2>&1
@@ -297,7 +302,7 @@ check "org.example.json: runtime remote, bin_dir, build_queue.real, state_backup
 echo "== agent lifetime: restart adoption and deadlines"
 check "B8: supervise.py and the feed do not run GNU timeout" "! grep -nE '\"timeout\"|timeout [0-9]' $KIT/scripts/supervise.py $KIT/scripts/lane-events.sh"
 newlane() {   # newlane <org dir> <lane> <agent_timeout_s> <canned outputs...>: an org + filled lane with a canned supervisor
-  local o=$1 ln=$2 t=$3; shift 3; mkdir -p "$o"; cp "$ORG/supervise.py" "$o/"
+  local o=$1 ln=$2 t=$3; shift 3; mkdir -p "$o"; cp "$ORG/"{supervise.py,promote.py,orgstate.py} "$o/"
   { echo '#!/usr/bin/env bash'; echo "n=\$(( \$(cat '$o/count' 2>/dev/null || echo 0) + 1 )); echo \$n > '$o/count'; cat > '$o/seen-'\$n.txt"
     echo 'case $n in'; i=1; for c in "$@"; do printf "  %s) printf '%%b' %q;;\n" $i "$c"; i=$((i+1)); done
     printf '%s\n' "  *) printf '=== DONE ===\\n';;"; echo 'esac'; } > "$o/sup.sh"; chmod +x "$o/sup.sh"
@@ -324,37 +329,37 @@ echo "== usage-limit detection"
 O7=$SB/org7; L7=$O7/lanes/u
 newlane "$O7" u 120 '=== PLAN ===\nWe are well within quota.\n=== END PLAN ===\n'
 qrc=0; (cd "$L7" && ORG_ROOT=$O7 tmo 40 python3 "$O7/supervise.py" "$L7" 1 > "$SB/u.out" 2>&1) || qrc=$?
-check "B6: a short reply saying 'quota' is not a usage limit (rc $qrc)" "[ $qrc = 0 ] && ! has $L7/lane.log 'usage limit' && has $L7/lane.log 'supervisor declared DONE'"
+check "B6: a short reply saying 'quota' is not a usage limit (rc $qrc)" "[ $qrc = 0 ] && ! has $L7/lane.log 'usage limit' && has $L7/lane.log 'DONE claimed by the supervisor'"
 O8=$SB/org8; L8=$O8/lanes/v
 newlane "$O8" v 120
 printf '#!/usr/bin/env bash\nn=$(( $(cat %q 2>/dev/null || echo 0) + 1 )); echo $n > %q; cat >/dev/null\n[ $n = 1 ] && { echo "Claude usage limit reached" >&2; exit 1; }\nprintf "=== DONE ===\\n"\n' "$O8/count" "$O8/count" > "$O8/sup.sh"
 python3 -c "import json,sys; d=json.load(open(sys.argv[1])); d['usage_limit_wait_s']=2; json.dump(d,open(sys.argv[1],'w'))" "$O8/org.json"
 vrc=0; (cd "$L8" && ORG_ROOT=$O8 tmo 40 python3 "$O8/supervise.py" "$L8" 1 > "$SB/v.out" 2>&1) || vrc=$?
-check "B6: a limit on stderr waits, then consults again (rc $vrc)" "[ $vrc = 0 ] && has $L8/lane.log 'supervisor hit a usage limit' && has $L8/lane.log 'supervisor declared DONE' && [ \$(cat $O8/count) = 2 ]"
+check "B6: a limit on stderr waits, then consults again (rc $vrc)" "[ $vrc = 0 ] && has $L8/lane.log 'supervisor hit a usage limit' && has $L8/lane.log 'DONE claimed by the supervisor' && [ \$(cat $O8/count) = 2 ]"
 
-# ── B3/B2: LAND runs the gates (code from main) and lands only on a checked-out main ──
-echo "== LAND gates"
+# ── B3/A9/B2: MERGE and LAND go through the coordinator: gates (code from main) + verify on the merged candidate ──
+echo "== promotions: MERGE/LAND through promote.py"
 mayland() { python3 -c "import json,sys; d=json.load(open(sys.argv[1])); d['may_land']=True; json.dump(d,open(sys.argv[1],'w'))" "$1/lane.json"; }
 O9=$SB/org9; L9=$O9/lanes/gate
 newlane "$O9" gate 120 '=== AGENT name=planner model=opus ===\nretune\n=== END AGENT ===\n' \
-  '=== LAND branch=lane/gate/planner ===\n=== AGENT name=clean model=opus ===\nmeasure\n=== END AGENT ===\n' \
-  '=== LAND branch=lane/gate/clean ===\n' '=== LAND branch=lane/gate/clean ===\n'
+  '=== MERGE branch=lane/gate/planner ===\n=== AGENT name=clean model=opus ===\nmeasure\n=== END AGENT ===\n' \
+  '=== MERGE branch=lane/gate/clean ===\n=== LAND branch=lane/gate/integration ===\n' '=== LAND branch=lane/gate/integration ===\n'
 mayland "$L9"
 grc=0; (cd "$L9" && ORG_ROOT=$O9 tmo 120 python3 "$O9/supervise.py" "$L9" 1 > "$SB/g.out" 2>&1) || grc=$?
-RF=$(ls "$L9"/reports/*-zz-land-refused-lane-gate-planner.md 2>/dev/null)
-check "B3: a Plan.md change with no Authority: is refused (rc $grc)" "[ $grc = 0 ] && has $L9/lane.log 'LAND lane/gate/planner REFUSED — the landing gates failed' && [ -n '$RF' ] && grep -q 'plan-ownership: exit 1 (FAIL)' '$RF'"
+RF=$(ls "$L9"/reports/*-zz-merge-refused-lane-gate-planner.md 2>/dev/null)
+check "A9/B3: MERGE of a Plan.md change with no Authority: is refused at the gates (rc $grc)" "[ $grc = 0 ] && has $L9/lane.log 'MERGE lane/gate/planner REFUSED — verification failed on the merged candidate' && [ -n '$RF' ] && grep -q 'gate plan-ownership: exit 1 (FAIL)' '$RF'"
 check "B3: the gate code is main's, not the candidate's (its neutered gate did not pass it)" "git -C $REPO show lane/gate/planner:scripts/gates/plan-ownership.mjs | grep -qx 'process.exit(0)' && grep -q 'PLAN-OWNERSHIP\\|Authority' '$RF'"
-check "B3: ...never merged: main does not carry the planner's commit" "! git -C $REPO merge-base --is-ancestor lane/gate/planner main"
-check "B3: a clean, justified candidate lands" "has $L9/lane.log 'LAND lane/gate/clean ok' && git -C $REPO merge-base --is-ancestor lane/gate/clean main"
-check "LAND of an already-landed branch: 'nothing to land', no second 'ok', the supervisor is told" "has $L9/lane.log 'LAND lane/gate/clean: nothing to land (already in main)' && [ \$(grep -c 'LAND lane/gate/clean ok' $L9/lane.log) = 1 ] && has $O9/seen-5.txt 'nothing to land'"
-check "B3: the refusal reaches the supervisor and the event feed" "has $O9/seen-3.txt 'LAND lane/gate/planner was refused' && grep -E \"\$EVENTS\" $L9/lane.log | grep -q 'LAND lane/gate/planner REFUSED'"
+check "B3: ...never merged: neither integration nor main carries the planner's commit" "! git -C $REPO merge-base --is-ancestor lane/gate/planner lane/gate/integration && ! git -C $REPO merge-base --is-ancestor lane/gate/planner main"
+check "B3: a clean, justified candidate merges, and the lane's integration lands" "has $L9/lane.log 'MERGE lane/gate/clean ok' && has $L9/lane.log 'LAND lane/gate/integration ok' && git -C $REPO merge-base --is-ancestor lane/gate/clean main"
+check "LAND of an already-landed integration: 'nothing to land', no second 'ok', the supervisor is told" "has $L9/lane.log 'LAND lane/gate/integration: nothing to land' && [ \$(grep -c 'LAND lane/gate/integration ok' $L9/lane.log) = 1 ] && has $O9/seen-5.txt 'nothing to land'"
+check "B3: the refusal reaches the supervisor and the event feed" "has $O9/seen-3.txt 'MERGE lane/gate/planner was refused' && grep -E \"\$EVENTS\" $L9/lane.log | grep -q 'MERGE lane/gate/planner REFUSED'"
 O10=$SB/org10; L10=$O10/lanes/p
-newlane "$O10" p 120 '=== AGENT name=parker model=opus ===\nwork\n=== END AGENT ===\n' '=== LAND branch=lane/p/parker ===\n'
+newlane "$O10" p 120 '=== AGENT name=parker model=opus ===\nwork\n=== END AGENT ===\n' '=== MERGE branch=lane/p/parker ===\n=== LAND branch=lane/p/integration ===\n'
 mayland "$L10"
 git -C "$REPO" checkout -q -b parked main; main1=$(git -C "$REPO" rev-parse main)
 prc=0; (cd "$L10" && ORG_ROOT=$O10 tmo 120 python3 "$O10/supervise.py" "$L10" 1 > "$SB/p.out" 2>&1) || prc=$?
-check "B2: LAND refused while the repo has another branch checked out (rc $prc)" "[ $prc = 0 ] && has $L10/lane.log 'LAND lane/p/parker REFUSED — $REPO has parked checked out, not main' && ls $L10/reports/*-zz-land-refused-lane-p-parker.md >/dev/null 2>&1"
-check "B2: ...main and the parked branch are untouched" "[ \$(git -C $REPO rev-parse main) = $main1 ] && [ \$(git -C $REPO rev-parse parked) = $main1 ]"
+check "B2: with the checkout parked on another branch, LAND moves the main ref only (rc $prc)" "[ $prc = 0 ] && has $L10/lane.log 'LAND lane/p/integration ok' && git -C $REPO merge-base --is-ancestor lane/p/parker main"
+check "B2: ...the parked branch, HEAD and checkout are untouched" "[ \$(git -C $REPO rev-parse parked) = $main1 ] && [ \$(git -C $REPO symbolic-ref --short HEAD) = parked ] && [ -z \"\$(git -C $REPO status --porcelain)\" ]"
 git -C "$REPO" checkout -q main
 
 # ── D1/D2: per-lane daily spend caps, running totals ──
@@ -371,12 +376,13 @@ check "D1: the breach is asked of the owner, once" "[ \$(grep -c '^## Budget' $L
 check "D1: counters live in loop-state.json" "python3 -c \"import json; b=json.load(open('$L11/loop-state.json'))['budget']; assert b['consults']==2 and b['breached']==['consults'], b\""
 check "D2: running total in the lane log, shown by the event feed" "grep -E \"\$EVENTS\" $L11/lane.log | grep -q 'TOTAL [0-9-]*: consults 1/2' && grep -E \"\$EVENTS\" $L11/lane.log | grep -q 'BUDGET cap reached'"
 O12=$SB/org12; L12=$O12/lanes/st
-newlane "$O12" st 120 '=== AGENT name=a1 model=opus ===\nx\n=== END AGENT ===\n=== AGENT name=a2 model=opus ===\nx\n=== END AGENT ===\n=== AGENT name=a3 model=opus ===\nx\n=== END AGENT ===\n'
+newlane "$O12" st 120 '=== AGENT name=a1 model=opus ===\nx\n=== END AGENT ===\n=== AGENT name=a2 model=opus ===\nx\n=== END AGENT ===\n=== AGENT name=a3 model=opus ===\nx\n=== END AGENT ===\n' \
+  '=== PLAN ===\nwaiting for a2\n=== END PLAN ===\n' '=== PLAN ===\nwaiting\n=== END PLAN ===\n'   # a rolling re-consult may come before a2 ends
 setorg "$O12/org.json" '{"max_agent_starts_per_day": 2}'; setorg "$L12/lane.json" '{"max_parallel": 3}'
 ( cd "$L12" && ORG_ROOT=$O12 exec python3 "$O12/supervise.py" "$L12" 1 > "$SB/st.out" 2>&1 ) & SP2=$!
 for _ in $(seq 1 150); do [ "$(grep -c 'finished rc=0' "$L12/lane.log" 2>/dev/null)" = 2 ] && break; sleep 0.2; done
 sleep 2; touch "$L12/STOP"; for _ in $(seq 1 50); do kill -0 $SP2 2>/dev/null || break; sleep 0.2; done; kill $SP2 2>/dev/null; wait $SP2 2>/dev/null
-check "D1: agent-start cap 2 — the third agent never starts; finished work is still committed" "has $L12/lane.log 'agent a1 (opus) start' && has $L12/lane.log 'agent a2 (opus) start' && ! has $L12/lane.log 'agent a3 (opus) start' && has $L12/lane.log 'BUDGET cap reached (starts 2/2)' && has $L12/lane.log 'agent a2 finished rc=0 report=present' && [ \$(grep -c '=== CONSULT' $L12/lane.log) = 1 ] && has $L12/lane.log 'supervisor loop exiting'"
+check "D1: agent-start cap 2 — the third agent never starts; finished work is still committed" "has $L12/lane.log 'agent a1 (opus) start' && has $L12/lane.log 'agent a2 (opus) start' && ! has $L12/lane.log 'agent a3 (opus) start' && has $L12/lane.log 'BUDGET cap reached (starts 2/2)' && has $L12/lane.log 'agent a2 finished rc=0 report=present' && has $L12/lane.log 'supervisor loop exiting'"
 O14=$SB/org14; L14=$O14/lanes/ov   # a budget idle still flags overdue reports
 newlane "$O14" ov 120 '=== AGENT name=a1 model=opus ===\nx\n=== END AGENT ===\n=== AGENT name=hang model=opus ===\nx\n=== END AGENT ===\n'
 setorg "$O14/org.json" '{"max_consults_per_day": 1, "report_overdue_s": 6}'
@@ -409,7 +415,7 @@ newlane "$O6" c 120
 python3 -c "import json,sys; d=json.load(open(sys.argv[1])); d['supervisor']={'backend':'claude','model':'sup-model'}; json.dump(d,open(sys.argv[1],'w'))" "$O6/org.json"
 crc=0; (cd "$L6" && ORG_ROOT=$O6 tmo 60 python3 "$O6/supervise.py" "$L6" 1 > "$SB/c.out" 2>&1) || crc=$?
 check "A2: claude supervisor is read-only by allowlist" "grep -q -- '--tools Read,Grep,Glob,WebSearch,WebFetch --disallowedTools mcp__\\* --dangerously-skip-permissions' $L6/claude-sup.args && ! grep -qwE 'Bash|Edit|Write|MultiEdit|NotebookEdit|LS' $L6/claude-sup.args"
-check "D9: claude supervisor gets its prompt on stdin, none in argv (rc $crc)" "[ $crc = 0 ] && has $L6/lane.log 'supervisor declared DONE' && ! grep -q 'CONSULT' $L6/claude-sup.args && grep -q '^# CONSULT 1' $L6/claude-sup.stdin && [ \"\$(tail -n 1 $L6/claude-sup.stdin)\" = 'Follow the supervisor brief at the top of this prompt verbatim: emit your blocks now.' ]"
+check "D9: claude supervisor gets its prompt on stdin, none in argv (rc $crc)" "[ $crc = 0 ] && has $L6/lane.log 'DONE claimed by the supervisor' && ! grep -q 'CONSULT' $L6/claude-sup.args && grep -q '^# CONSULT 1' $L6/claude-sup.stdin && [ \"\$(tail -n 1 $L6/claude-sup.stdin)\" = 'Follow the supervisor brief at the top of this prompt verbatim: emit your blocks now.' ]"
 
 echo "== $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

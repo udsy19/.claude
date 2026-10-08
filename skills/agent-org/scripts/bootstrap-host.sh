@@ -103,7 +103,7 @@ need "$CL" "npm i -g @anthropic-ai/claude-code   (then log in: claude → /login
 [ -n "$MISSING" ] && { echo "install the missing tools, then re-run"; exit 3; }
 case $CL in /*) ;; *) echo "NOTE: claude_bin \"$CL\" is not absolute; set it to $(command -v "$CL") in org.json (workers run with worker_env.PATH, which may not find it)";; esac
 mkdir -p "$ORG_ROOT"/{lanes,logs,templates,locks}
-cp "$KIT"/{supervise.py,lane-metrics.py,git-sync.sh,state-snapshot.sh,lane-events.sh,lanes.sh} "$ORG_ROOT/"; chmod +x "$ORG_ROOT"/*.sh
+cp "$KIT"/{supervise.py,promote.py,orgstate.py,lane-metrics.py,git-sync.sh,state-snapshot.sh,lane-events.sh,lanes.sh} "$ORG_ROOT/"; chmod +x "$ORG_ROOT"/*.sh
 cp -R "$KIT/../templates/lane" "$ORG_ROOT/templates/"          # lanes.sh in ORG_ROOT fills new lanes from these
 if [ "$MODE" = local ] || [ -w "$BIN" ]; then install_bin; fi   # remote: root installed it in phase 1
 # the project rules require these two skills; nothing else of the owner's global config is installed here

@@ -8,12 +8,12 @@ Each consult, the supervisor reads its brief + context + plan + owner rulings (a
 + a digest of the newest reports + the lane branch's code view + fresh images, and emits blocks this loop executes:
   === PLAN === … === END PLAN ===                         (rewritten whole every consult)
   === AGENT name=<slug> model=<key> [base=<ref>] === … === END AGENT ===
-  === MERGE branch=<ref> ===                               (into the lane integration branch; hubs regenerated)
-  === LAND branch=<ref> ===                                (into main; only if lane.json may_land=true; hubs regenerated)
+  === MERGE branch=<lane>/<agent> ===                      (request: into the lane integration branch, via promote.py)
+  === LAND branch=<lane>/integration ===                   (request: into main, via promote.py; lane.json may_land)
   === KILL name=<slug> ===                                 (terminate a running agent; its work is committed)
   === ASK_OWNER === … === END ASK ===                      (appended to owner-questions.md)
   === LEARN === … === END LEARN ===                        (appended to lane-memory.md: the supervisor's persistent memory)
-  === DONE ===
+  === DONE ===                                             (a claim: promote.py derives whether the mission is done)
 A consult with none of these is logged as NO ACTIONABLE BLOCK and quoted back in the next prompt.
 ROLLING: the supervisor is re-consulted whenever ANY agent finishes (no round barrier). Each agent runs in its
 own session (process group) with a deadline kept in <LANE_ROOT>/pids/<name>.json; a restarted loop ADOPTS the
@@ -74,7 +74,6 @@ CODE_VIEW_MAX = 6000                                               # chars of gi
 IMAGE_MAX = 12                                                     # pinned (renders/owner, renders/latest) + fresh
 ACTION_RE = re.compile(r"^=== (PLAN|AGENT|MERGE|LAND|ASK_OWNER|LEARN|MEMORY_CONSOLIDATED|DONE|KILL)\b", re.M)
 UNFILLED_RE = re.compile(r"\{\{[A-Z][A-Z0-9_]*\}\}")
-HUB_RE = re.compile(r"^vault/(.+/)?(README|Map)\.md$")            # files scripts/vault-hubs.mjs generates
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,40}$")                 # agent names: they become paths and branch names
 
 
@@ -514,53 +513,6 @@ def watch_reports(running):
                 log(f"REPORT OVERDUE {name}: no report {int(time.time() - t0) // 60} min after start")
 
 
-def git_merge(cwd, br, msg):
-    cenv = {**os.environ, **COMMIT_ENV}
-    return sh(f"cd {q(cwd)} && git merge --no-ff --no-verify -m {q(msg)} {q(br)}", env=cenv)
-
-
-def regen_hubs(cwd, why):
-    """Regenerate the vault hubs from cwd's COMMITTED HEAD in a throw-away worktree (never in a working tree that
-    may hold someone's uncommitted notes), commit, and fast-forward cwd onto it. No-op without vault-hubs.mjs."""
-    if not os.path.exists(f"{cwd}/scripts/vault-hubs.mjs"):
-        return
-    tmp = f"{R}/hubs-tmp"
-    sh(f"cd {q(cwd)} && (git worktree remove --force {q(tmp)}; rm -rf {q(tmp)}; git worktree prune) 2>/dev/null")
-    if sh(f"cd {q(cwd)} && git worktree add -q --detach {q(tmp)} HEAD").returncode:
-        log(f"hubs: could not create a worktree for {why}")
-        return
-    try:
-        r = sh(f"cd {q(tmp)} && node scripts/vault-hubs.mjs")
-        if r.returncode:
-            log(f"hubs FAILED after {why}: {(r.stderr or r.stdout).strip()[:200]}")
-            return
-        if not git_out("git status --porcelain -- vault", tmp):
-            return
-        msg = f"vault: regenerate hubs after merge\n\n{why}\n\nAuthority: supervisor"
-        sh(f"cd {q(tmp)} && git add -A -- vault && git commit --no-verify -q -m {q(msg)}", env={**os.environ, **COMMIT_ENV})
-        ff = sh(f"cd {q(cwd)} && git merge --ff-only -q {git_out('git rev-parse HEAD', tmp)}")
-        log(f"hubs regenerated after {why}" if not ff.returncode else f"hubs: fast-forward refused after {why}: {ff.stderr.strip()[:200]}")
-    finally:
-        sh(f"cd {q(cwd)} && git worktree remove --force {q(tmp)}")
-
-
-def merge(cwd, br, msg, why):
-    """git merge; a conflict in generated hub files ONLY is resolved by regenerating them. Hubs are regenerated
-    after every successful merge, so parallel workers never need to hand-edit them."""
-    r = git_merge(cwd, br, msg)
-    if r.returncode:
-        unmerged = git_out("git diff --name-only --diff-filter=U", cwd).splitlines()
-        if unmerged and all(HUB_RE.match(f) for f in unmerged) and os.path.exists(f"{cwd}/scripts/vault-hubs.mjs"):
-            files = " ".join(q(f) for f in unmerged)
-            r = sh(f"cd {q(cwd)} && git checkout --ours -- {files} && git add -- {files} && git commit --no-verify -q --no-edit",
-                   env={**os.environ, **COMMIT_ENV})
-            if not r.returncode:
-                log(f"{why}: conflict only in {len(unmerged)} generated hub file(s) — resolved by regeneration")
-    if not r.returncode:
-        regen_hubs(cwd, why)
-    return r
-
-
 def valid_ref(ref):
     """A branch/base the supervisor named: never an option, never a revision expression, a legal branch name."""
     return (not ref.startswith("-") and "@{" not in ref
@@ -574,73 +526,42 @@ def refuse_block(what, why):
     save_state()
 
 
-LAND_GATES = (("plan-ownership", ["node", "scripts/gates/plan-ownership.mjs", "--since", "{base}"]),
-              ("sprawl", ["node", "scripts/gates/sprawl.mjs", "--base", "{base}", "--tip", "HEAD"]),
-              ("protected-paths", ["node", "scripts/gates/protected-paths.mjs"]))
+PROMOTE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "promote.py")
 
 
-def land_gates(br):
-    """Run the landing gates on the candidate. The gate CODE comes from main (a branch cannot weaken the gate that
-    judges it); the content and history are the candidate's. Returns (ok, report). Exit 0 passes, 77 is an empty
-    range (nothing to land), anything else refuses."""
-    missing = [g for g, a in LAND_GATES if sh(f"cd {q(REPO)} && git cat-file -e {q(f'{MAIN_BR}:{a[1]}')}").returncode]
-    if missing:
-        return False, f"the landing gates are not on {MAIN_BR} ({', '.join(missing)}): install the agent-org repo layer first"
-    base = git_out(f"git merge-base {q(MAIN_BR)} {q(br)}")
-    if not base:
-        return False, f"{br} shares no history with {MAIN_BR}"
-    tmp = f"{R}/land-tmp"
-    sh(f"cd {q(REPO)} && (git worktree remove --force {q(tmp)}; rm -rf {q(tmp)}; git worktree prune) 2>/dev/null")
-    if sh(f"cd {q(REPO)} && git worktree add -q --detach {q(tmp)} {q(br)}").returncode:
-        return False, f"could not check out {br} to grade it"
+def coordinator(*args, rnd=0):
+    """Ask the ONE trusted promotion coordinator (promote.py). The loop only requests; it decides and executes.
+    Returns its JSON result; its notices reach the supervisor."""
+    r = subprocess.run([sys.executable, PROMOTE, ORG_ROOT, *args, "--consult", str(rnd)], text=True, capture_output=True)
     try:
-        sh(f"cd {q(tmp)} && git checkout -q {q(MAIN_BR)} -- scripts/gates scripts/lib")
-        env = {**os.environ, "ORG_MAIN_BRANCH": MAIN_BR}
-        out, ok = [], True
-        for g, args in LAND_GATES:
-            r = subprocess.run([a.format(base=base) for a in args], cwd=tmp, env=env, text=True, capture_output=True)
-            passed = r.returncode in (0, 77)
-            ok &= passed
-            tail = "\n".join((r.stdout + r.stderr).strip().splitlines()[-12:])
-            out.append(f"### {g}: exit {r.returncode} ({'pass' if passed else 'FAIL'})\n```\n{tail}\n```")
-        return ok, "\n\n".join(out)
-    finally:
-        sh(f"cd {q(REPO)} && git worktree remove --force {q(tmp)}")
-
-
-def refuse_land(br, rnd, why, detail=""):
-    """A refused landing is logged, written where the supervisor and the overseer read, and never merged."""
-    log(f"LAND {br} REFUSED — {why}")
-    open(f"{R}/reports/{rnd:04d}-zz-land-refused-{br.replace('/', '-')}.md", "w").write(
-        f"# LAND of {br} on {MAIN_BR} REFUSED (consult {rnd})\n\n{why}\n\n{detail}\n")
-    ST["notes"].append(f"LAND {br} was refused: {why}. See reports/{rnd:04d}-zz-land-refused-{br.replace('/', '-')}.md.")
-    save_state()
-
-
-def land(br, rnd):
-    if not LANE.get("may_land"):
-        log(f"LAND {br} REFUSED — this lane may not land on main")
-        return
-    head = git_out("git symbolic-ref --short -q HEAD")
-    if head != MAIN_BR:         # a merge lands on whatever is checked out: only ever on main
-        return refuse_land(br, rnd, f"{REPO} has {head or 'a detached HEAD'} checked out, not {MAIN_BR}")
-    if sh(f"cd {q(REPO)} && git merge-base --is-ancestor {q(br)} {q(MAIN_BR)}").returncode == 0:
-        # Already landed: the gates would all see an empty range (77) and the merge would say "Already up to date"
-        # with exit 0 — logging "ok" would teach the supervisor that re-landing is free.
-        log(f"LAND {br}: nothing to land (already in {MAIN_BR})")
-        ST["notes"].append(f"LAND {br}: nothing to land, it is already in {MAIN_BR}.")
+        res = json.loads(r.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        res = {"decision": "refused", "reason": f"coordinator error (exit {r.returncode}): {(r.stderr or r.stdout).strip()[-300:]}",
+               "notices": [], "report": ""}
+    for n in res.get("notices", []):
+        log(f"RECONCILED: {n}")
+        ST["notes"].append(n)
+    if res.get("notices"):
         save_state()
-        return
-    ok, report = land_gates(br)
-    if not ok:
-        return refuse_land(br, rnd, "the landing gates failed", report)
-    r = merge(REPO, br, f"{PREFIX}: land {br} on {MAIN_BR} (consult {rnd})\n\nAuthority: supervisor",
-              f"LAND {br} on {MAIN_BR} (consult {rnd})")
-    if r.returncode:
-        sh(f"cd {q(REPO)} && git merge --abort")
-        log(f"LAND {br} CONFLICT — aborted, main untouched")
+    return res
+
+
+def promotion(kind, br, rnd):
+    """MERGE (into this lane's integration branch) or LAND (its integration branch into main), via the coordinator.
+    Every refusal is logged, written where the supervisor and the overseer read, and quoted back to the supervisor."""
+    res = coordinator("request", kind.lower(), R, br, rnd=rnd)
+    d, why = res["decision"], res.get("reason", "")
+    if d == "promoted":
+        log(f"{kind} {br} ok ({res['sha'][:7]}, {res['prom']})")
+    elif d == "nothing":
+        log(f"{kind} {br}: nothing to {kind.lower()} ({why})")
+        ST["notes"].append(f"{kind} {br}: nothing to {kind.lower()}, {why}.")
     else:
-        log(f"LAND {br} ok ({git_out('git rev-parse --short HEAD')})")
+        rep = f"{R}/reports/{rnd:04d}-zz-{kind.lower()}-refused-{br.replace('/', '-')}.md"
+        log(f"{kind} {br} REFUSED — {why}")
+        open(rep, "w").write(f"# {kind} of {br} REFUSED (consult {rnd}, {res.get('prom')})\n\n{why}\n\n{res.get('report', '')}\n")
+        ST["notes"].append(f"{kind} {br} was refused: {why}. See reports/{os.path.basename(rep)}.")
+    save_state()
 
 
 # ── main loop ────────────────────────────────────────────────────────────────────────────────────────
@@ -660,6 +581,7 @@ def main():
             log(f"UNFILLED {f}: {'empty' if not text.strip() else ' '.join(left)} — fill it, then lanes.sh start")
             sys.exit(2)
     rnd = START_ROUND
+    coordinator("reconcile", rnd=rnd)          # promotions a crash interrupted: finished or aborted, never replayed blind
     running, pending, candidates = adopt_running(), [], []
     while not stopped():
         if over_budget("consults", running):
@@ -738,19 +660,18 @@ def main():
             (merges if kind == "MERGE" else lands).append(br)
         candidates = merges + lands
         for br in merges:
-            r = merge(INT, br, f"{PREFIX}: merge {br} (consult {rnd})", f"MERGE {br} into {INT_BR} (consult {rnd})")
-            if r.returncode:
-                sh(f"cd {q(INT)} && git merge --abort")
-                log(f"MERGE {br} CONFLICT — aborted")
-                open(f"{R}/reports/{rnd:04d}-zz-merge-{br.replace('/', '-')}.md", "w").write(
-                    f"# Merge of {br} into {INT_BR} FAILED (conflict)\n\n{r.stdout[-3000:]}\n{r.stderr[-2000:]}\n")
-            else:
-                sh(f"cd {q(INT)} && git push -q origin {q(INT_BR)}")
-                log(f"MERGE {br} ok")
+            promotion("MERGE", br, rnd)
         for br in lands:
-            land(br, rnd)
+            promotion("LAND", br, rnd)
         if re.search(r"^=== DONE ===", out, re.M):
-            log("supervisor declared DONE")
+            log("DONE claimed by the supervisor")
+            res = coordinator("done", R, rnd=rnd)
+            if res["decision"] == "verified":
+                log(f"DONE verified: {res['reason']}")
+            else:   # the mission is NOT complete: the lane halts (no consults burnt) and the owner is asked
+                log(f"DONE NOT verified — {res['reason']} — lane halted, mission not complete")
+                with open(f"{R}/owner-questions.md", "a") as f:
+                    f.write(f"\n## Consult {rnd} ({now():%Y-%m-%d %H:%M} UTC) — DONE claimed, not verified\n{res['reason']}\n")
             break
         for n, mdl, base, b in re.findall(r"=== AGENT name=(\S+) model=(\S+)(?: base=(\S+))? ===\n(.*?)\n=== END AGENT ===", out, re.S):
             if not NAME_RE.match(n):
@@ -770,6 +691,7 @@ def main():
                 n, mdl, base, b = pending.pop(0)
                 st = run_agent(n if not os.path.isdir(f"{R}/wt/{n}") else f"{n}-c{rnd}", mdl, base, b, rnd)
                 if st:
+                    coordinator("dispatch", R, st[2], f"{PREFIX}/{st[2]}", base, rnd=rnd)
                     running.append(st)
                     spend(running)["starts"] += 1
                     save_state()
