@@ -869,6 +869,10 @@ def main():
             if base and not valid_ref(base):
                 refuse_block(f"AGENT name={n} base={base}", "not a legal branch name (git check-ref-format --branch)")
                 continue
+            if base and base != MAIN_BR and base != INT_BR and not base.startswith(f"{PREFIX}/"):
+                # dispatch scope (F6): another lane's branch would carry its unreviewed work into this lane's MERGEs
+                refuse_block(f"AGENT name={n} base={base}", f"a worker is based on {MAIN_BR}, {INT_BR} or a {PREFIX}/* branch only")
+                continue
             if n in {x[2] for x in running} | {p[0] for p in pending}:
                 log(f"agent {n} already running/queued — duplicate ignored")
                 continue

@@ -103,7 +103,7 @@ mkdir -p $SB/seen; cat > $SB/seen/\$n.txt
 case \$n in
   1) printf '=== PLAN ===\nplan v1\n=== END PLAN ===\n\n=== AGENT name=alpha model=opus ===\ndo alpha\n=== END AGENT ===\n\n=== AGENT name=slowpoke model=opus ===\nhang\n=== END AGENT ===\n';;
   2) printf '=== MERGE branch=lane/t/alpha ===\n=== LAND branch=lane/t/integration ===\n=== LEARN ===\nalpha merged\n=== END LEARN ===\n\n=== AGENT name=beta model=opus ===\ndo beta\n=== END AGENT ===\n';;
-  3) printf 'slowpoke is overdue.\n=== KILL name=slowpoke ===\n=== KILL name=../x ===\n=== AGENT name=../../escape model=opus ===\nx\n=== END AGENT ===\n=== AGENT name=okname model=opus base=--force ===\nx\n=== END AGENT ===\n=== MERGE branch=--force ===\n=== LAND branch=main@{1} ===\n';;
+  3) printf 'slowpoke is overdue.\n=== KILL name=slowpoke ===\n=== KILL name=../x ===\n=== AGENT name=../../escape model=opus ===\nx\n=== END AGENT ===\n=== AGENT name=okname model=opus base=--force ===\nx\n=== END AGENT ===\n=== AGENT name=crossbase model=opus base=lane/other/evil ===\nx\n=== END AGENT ===\n=== MERGE branch=--force ===\n=== LAND branch=main@{1} ===\n';;
   4) printf 'I think we should wait and see what happens next.\n';;
   *) printf '=== DONE ===\n';;
 esac
@@ -167,6 +167,7 @@ check "NO ACTIONABLE BLOCK logged" "has $L/lane.log 'NO ACTIONABLE BLOCK in cons
 check "...and quoted into the next prompt" "has $S/5.txt 'produced no actionable block (first 500 chars:' && has $S/5.txt 'I think we should wait'"
 check "LEARN still journaled" "has $L/lane-memory.md 'alpha merged'"
 # A1: supervisor output is untrusted input
+check "F6: a worker based on another lane's branch is refused (dispatch scope), never started" "has $L/lane.log 'REFUSED AGENT name=crossbase base=lane/other/evil' && ! has $L/lane.log 'agent crossbase'"
 check "A1: hostile names/refs refused and logged" "has $L/lane.log 'REFUSED AGENT name=../../escape' && has $L/lane.log 'REFUSED AGENT name=okname base=--force' && has $L/lane.log 'REFUSED MERGE branch=--force' && has $L/lane.log 'REFUSED LAND branch=main@{1}' && has $L/lane.log 'REFUSED KILL name=../x'"
 check "A1: nothing written outside the lane, no branch made" "[ ! -e $ORG/escape ] && [ ! -e $ORG/lanes/escape ] && [ ! -e $L/wt/okname ] && ! git -C $REPO rev-parse -q --verify refs/heads/lane/t/okname >/dev/null && ! ls $L/prompts | grep -q -e escape -e okname"
 check "A1: refusals quoted back to the supervisor" "has $S/4.txt 'Your block \`AGENT name=../../escape\` was refused'"
