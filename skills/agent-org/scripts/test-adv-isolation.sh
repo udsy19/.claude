@@ -98,7 +98,7 @@ chmod +x "$SB/bin/hostile.sh"
 
 # ── the org: srt isolation, the hostile fake as claude_bin, a canned supervisor; the control-plane state DB ──
 mkdir -p "$ORG/state" && echo "ORG-DB-ORIGINAL" > "$ORG/state/org.db"
-cp "$KIT/scripts/supervise.py" "$ORG/"
+cp "$KIT/scripts/supervise.py" "$KIT/scripts/promote.py" "$KIT/scripts/orgstate.py" "$ORG/"
 cat > "$SB/sup.sh" <<'EOF'
 #!/usr/bin/env bash
 c=$(dirname "$0")/count; n=$(( $(cat "$c" 2>/dev/null || echo 0) + 1 )); echo $n > "$c"; cat > "$(dirname "$0")/seen-$n.txt"
