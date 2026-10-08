@@ -7,6 +7,9 @@
 #
 # Runs locally: ships this config (git archive HEAD) to the host, then runs steps 1–8 there over SSH, each step
 # checking its named artefact. Every command's output goes to ./smoke-vps-<UTC stamp>.log (or $SMOKE_LOG).
+# SMOKE_EXEC overrides the transport: a command prefix that runs its arguments as root on the target with stdin
+# attached (default: ssh -o BatchMode=yes <target>). To keep a shared box untouched, run the steps in a container
+# on it: SMOKE_EXEC="ssh -o BatchMode=yes root@HOST docker exec -i <container>" (see docs/smoke-vps.md).
 # Exit 0: all steps passed. Exit 10: a step needs a human (the worker login) — do what it says, then re-run with
 # --resume-from <step>. Any other exit: that step failed; fix, then --resume-from <step>.
 #   1 phase A as root (packages, Claude Code from Anthropic's apt repo, org.json, bootstrap phase 1, the project
@@ -31,16 +34,18 @@ if [ "$MODE" = local ]; then
   SELF=$(cd "$(dirname "$0")" && pwd)/$(basename "$0"); TOP=$(git -C "$(dirname "$SELF")" rev-parse --show-toplevel)
   LOG=${SMOKE_LOG:-$PWD/smoke-vps-$(date -u +%Y%m%dT%H%M%SZ).log}
   say() { printf '%s\n' "$*" | tee -a "$LOG"; }
-  say "== smoke-vps $(date -u +%FT%TZ) target=$T kit=$(git -C "$TOP" rev-parse --short HEAD) from step $FROM"
+  read -r -a X <<< "${SMOKE_EXEC:-ssh -o BatchMode=yes -o ConnectTimeout=15 $T}"   # the transport, as words
+  say "== smoke-vps $(date -u +%FT%TZ) target=$T via '${X[*]}' kit=$(git -C "$TOP" rev-parse --short HEAD) from step $FROM"
   if [ "$FROM" = 1 ]; then
     say "== shipping the config (git archive HEAD) to /opt/agent-org-config"
-    git -C "$TOP" archive HEAD | ssh -o BatchMode=yes -o ConnectTimeout=15 "$T" \
-      'rm -rf /opt/agent-org-config && mkdir -p /opt/agent-org-config && tar -x -C /opt/agent-org-config && chmod -R a+rX /opt/agent-org-config' \
-      >> "$LOG" 2>&1 || { say "could not reach $T over ssh as root (BatchMode)"; exit 1; }
+    # Plain words only: ssh joins its arguments into one remote command line, so anything quoted would be
+    # re-parsed (and with SMOKE_EXEC through docker exec, parsed twice).
+    { "${X[@]}" rm -rf /opt/agent-org-config && git -C "$TOP" archive --prefix=opt/agent-org-config/ HEAD | "${X[@]}" tar -x -C / &&
+      "${X[@]}" chmod -R a+rX /opt/agent-org-config; } >> "$LOG" 2>&1 || { say "could not run as root on $T via '${X[*]}'"; exit 1; }
   fi
   for n in $(seq "$FROM" "$STEPS"); do
     say "== step $n"
-    ssh -o BatchMode=yes -o ConnectTimeout=15 "$T" bash -s -- --remote-step "$n" < "$SELF" 2>&1 | tee -a "$LOG"; rc=${PIPESTATUS[0]}
+    "${X[@]}" bash -s -- --remote-step "$n" < "$SELF" 2>&1 | tee -a "$LOG"; rc=${PIPESTATUS[0]}
     if [ "$rc" = 10 ]; then say "== step $n needs you (above). Then: $0 $T --resume-from $n"; exit 10; fi
     [ "$rc" = 0 ] || { say "== step $n FAILED (exit $rc). Fix it, then: $0 $T --resume-from $n   (log: $LOG)"; exit 1; }
   done
@@ -65,7 +70,7 @@ PY
 case $N in
 1) echo "-- phase A (root): packages, Claude Code (apt, https://code.claude.com/docs/en/setup), org.json, bootstrap phase 1"
    export DEBIAN_FRONTEND=noninteractive
-   apt-get update -qq && apt-get install -y -qq git tmux python3 rsync jq cron curl gnupg nodejs util-linux >/dev/null || exit 1
+   apt-get update -qq && apt-get install -y -qq git tmux python3 rsync jq cron curl gnupg nodejs util-linux procps >/dev/null || exit 1
    if ! command -v claude >/dev/null; then
      install -d -m 0755 /etc/apt/keyrings
      curl -fsSL https://downloads.claude.ai/keys/claude-code.asc -o /etc/apt/keyrings/claude-code.asc
