@@ -38,7 +38,7 @@ cat > "$SB/fake-claude.sh" <<'EOF'
 #!/usr/bin/env bash
 case "$*" in *"reply with just OK"*) echo OK; exit 0;; esac
 prompt=$(cat); report=$(printf '%s' "$prompt" | grep -o 'Write your report to `[^`]*`' | head -1 | sed 's/.*`\(.*\)`/\1/')
-org=${LANE_ROOT%/lanes/*}
+org=${FAKE_ORG:?}   # baked in by the per-org claude.sh: workers get no LANE_ROOT/ORG_ROOT (isolation A5)
 msg=$(printf '%s work\n\nEVIDENCE-GROWTH: vault/Reports/%s.md records what %s did, which the lane needs to judge it.' "$AGENT_NAME" "$AGENT_NAME" "$AGENT_NAME")
 printf '# %s\n\nwork\n' "$AGENT_NAME" > "vault/Reports/$AGENT_NAME.md"
 [ -f "$org/worker-$AGENT_NAME.sh" ] && . "$org/worker-$AGENT_NAME.sh"
@@ -68,11 +68,13 @@ lane=\$(basename "\$(dirname "\$PWD")"); c=$o/count-\$lane; n=\$(( \$(cat "\$c" 
 cat > "$o/seen-\$lane-\$n.txt"; f="$o/script-\$lane-\$n.txt"; if [ -f "\$f" ]; then cat "\$f"; else printf '=== DONE ===\\n'; fi
 EOF
   chmod +x "$o/sup.sh"
+  printf '#!/usr/bin/env bash\nFAKE_ORG=%q exec %q "$@"\n' "$o" "$SB/fake-claude.sh" > "$o/claude.sh"; chmod +x "$o/claude.sh"
   cat > "$o/org.json" <<EOF
-{ "project": "adv", "repo": "$d/repo", "main_branch": "main", "worker_user": "", "claude_bin": "$SB/fake-claude.sh",
+{ "project": "adv", "repo": "$d/repo", "main_branch": "main", "worker_user": "", "claude_bin": "$o/claude.sh",
   "supervisor": { "backend": "script", "command": "$o/sup.sh" }, "worker_models": { "opus": "fake" }, "default_worker_model": "opus",
   "agent_timeout_s": 120, "report_overdue_s": 600, "poll_interval_s": 1, "idle_wait_s": 1, "consult_timeout_s": 60,
-  "verify": [{"name": "product-check", "run": "sh src/check.sh"}], "sync": {"interval_s": 1, "branch_globs": ["lane/*"]} }
+  "verify": [{"name": "product-check", "run": "sh src/check.sh"}], "sync": {"interval_s": 1, "branch_globs": ["lane/*"]},
+  "isolation": {"mode": "none"} }
 EOF
   for k in "$@"; do bash "$o/lanes.sh" "$o" new "$k" "goal $k" 2 true >/dev/null || { echo "lanes.sh new $k failed"; exit 2; }
     python3 -c "import re,sys
