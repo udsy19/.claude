@@ -21,7 +21,7 @@ agents still running from those files (no GNU `timeout`: macOS does not ship it)
 Stop: touch <LANE_ROOT>/STOP: no new consults or dispatches; running agents keep working and `lanes.sh start`
 adopts them. Agents run sandboxed (docs/isolation.md).
 """
-import datetime, glob, json, os, pwd, re, secrets, shlex, shutil, signal, subprocess, sys, time
+import datetime, glob, json, os, pwd, re, secrets, shlex, shutil, signal, subprocess, sys, tempfile, time
 
 LANE_ROOT = os.path.abspath(sys.argv[1]) if len(sys.argv) > 1 else os.getcwd()
 START_ROUND = int(sys.argv[2]) if len(sys.argv) > 2 else 1
@@ -208,12 +208,21 @@ def trusted_scripts():
         return None
     d = f"{ORG_ROOT}/trusted/{sha}"
     if not os.path.isdir(f"{d}/scripts"):
-        shutil.rmtree(d + ".tmp", ignore_errors=True)
-        os.makedirs(d + ".tmp")
-        if sh(f"cd {q(REPO)} && git archive {q(sha)} scripts | tar -x -C {q(d + '.tmp')}").returncode:
+        # Every lane loop may extract the same commit at the same moment: each uses its own temp dir and one atomic
+        # rename wins; a loser drops its copy and uses the winner's (a shared ".tmp" crashed the losing loop).
+        os.makedirs(f"{ORG_ROOT}/trusted", exist_ok=True)
+        tmp = tempfile.mkdtemp(dir=f"{ORG_ROOT}/trusted", prefix=f"{sha}.tmp-")
+        if sh(f"cd {q(REPO)} && git archive {q(sha)} scripts | tar -x -C {q(tmp)}").returncode:
+            shutil.rmtree(tmp, ignore_errors=True)
             log(f"trusted scripts: could not extract scripts/ from {MAIN_BR}@{sha[:7]}")
             return None
-        os.replace(d + ".tmp", d)
+        try:
+            os.rename(tmp, d)
+        except OSError:
+            shutil.rmtree(tmp, ignore_errors=True)
+            if not os.path.isdir(f"{d}/scripts"):
+                log(f"trusted scripts: {d} exists but has no scripts/ — remove it and restart")
+                return None
     return f"{d}/scripts"
 
 
