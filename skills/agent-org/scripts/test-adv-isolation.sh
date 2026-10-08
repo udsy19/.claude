@@ -135,8 +135,11 @@ check "A6: cannot read the owner's ~/.ssh" "has $A 'blocked ssh-read'"
 check "A6: does not see the loop's environment (PLANTED_SECRET)" "has $A 'blocked env-secret'"
 check "A5: gets no LANE_ROOT/ORG_ROOT" "has $A 'blocked env-lane-root'"
 check "A5: cannot read its lane's rulings.md" "has $A 'blocked rulings-read'"
-check "A5: cannot write its lane's rulings.md (file unchanged)" "has $A 'blocked rulings-write' && cmp -s $L/rulings.md $SB/rulings.orig"
-check "A5: cannot write org.json (file unchanged)" "has $A 'blocked orgjson-write' && cmp -s $ORG/org.json $SB/org.json.orig"
+# Graded on the HOST, which is the invariant: on Linux srt hides a read-denied directory under an in-sandbox tmpfs,
+# so the attacker's write "succeeds" into a private copy that vanishes (the diagnostics below show its view);
+# on macOS Seatbelt refuses the write outright. Either way the real control-plane file must be unchanged.
+check "A5: its write to the lane's rulings.md never reaches the host (file unchanged)" "cmp -s $L/rulings.md $SB/rulings.orig"
+check "A5: its write to org.json never reaches the host (file unchanged)" "cmp -s $ORG/org.json $SB/org.json.orig"
 # What the attacker saw vs what happened on the host, for each control-plane write (diagnosable per OS):
 for w in rulings-write orgjson-write statedb-write; do
   printf '  -- %s: attacker saw "%s"\n' "$w" "$(grep -h -- "$w" "$A" 2>/dev/null | head -1)"; done
@@ -167,7 +170,7 @@ S=$L/home/_supervisor/attacks.txt
 check "the supervisor consult ran inside the sandbox and ended the lane (rc $src)" "[ $src = 0 ] && has $L/lane.log 'DONE claimed by the supervisor' && [ -s $S ]"
 check "A10: the supervisor cannot read the owner's ~/.ssh" "has $S 'blocked ssh-read'"
 check "A10: the supervisor cannot exfiltrate over the network" "has $S 'blocked exfil' && [ ! -s $SB/exfil.log ]"
-check "A10: the supervisor cannot write rulings or the state DB" "has $S 'blocked rulings-write' && has $S 'blocked statedb-write' && cmp -s $L/rulings.md $SB/rulings.orig"
+check "A10: the supervisor's writes to rulings and the state DB never reach the host" "has $S 'blocked statedb-write' && cmp -s $L/rulings.md $SB/rulings.orig"
 
 echo "== F4a: a truncated pid file never orphans a live agent into gc"
 python3 - "$ORG/org.json" "$SB/sup.sh" <<'PY'
