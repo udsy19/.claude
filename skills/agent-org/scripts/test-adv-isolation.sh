@@ -137,6 +137,11 @@ check "A5: gets no LANE_ROOT/ORG_ROOT" "has $A 'blocked env-lane-root'"
 check "A5: cannot read its lane's rulings.md" "has $A 'blocked rulings-read'"
 check "A5: cannot write its lane's rulings.md (file unchanged)" "has $A 'blocked rulings-write' && cmp -s $L/rulings.md $SB/rulings.orig"
 check "A5: cannot write org.json (file unchanged)" "has $A 'blocked orgjson-write' && cmp -s $ORG/org.json $SB/org.json.orig"
+# What the attacker saw vs what happened on the host, for each control-plane write (diagnosable per OS):
+for w in rulings-write orgjson-write statedb-write; do
+  printf '  -- %s: attacker saw "%s"\n' "$w" "$(grep -h -- "$w" "$A" 2>/dev/null | head -1)"; done
+printf '  -- host: rulings.md %s, org.json %s\n' "$(cmp -s "$L/rulings.md" "$SB/rulings.orig" && echo unchanged || echo CHANGED)" \
+  "$(cmp -s "$ORG/org.json" "$SB/org.json.orig" && echo unchanged || echo CHANGED)"
 check "control plane: cannot read ORG_ROOT/state/org.db" "has $A 'blocked statedb-read'"
 check "control plane: cannot write ORG_ROOT/state/org.db (unchanged)" "has $A 'blocked statedb-write' && [ \"\$(cat $ORG/state/org.db)\" = ORG-DB-ORIGINAL ]"
 check "A5: cannot read other agents' prompts" "has $A 'blocked prompts-read'"
