@@ -2,12 +2,13 @@ name: ci
 
 on:
   push:
+    branches: [main]   # a PR branch is tested by its pull_request run: one run per change, nothing to cancel
   pull_request:
 
 permissions:
   contents: read
 
-# One run per branch: a push to a PR's branch and the PR event share the group, and the newer run cancels the older.
+# A newer commit on the same PR (or main) cancels the run it supersedes.
 concurrency:
   group: ci-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true

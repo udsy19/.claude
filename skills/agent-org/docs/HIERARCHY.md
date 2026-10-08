@@ -121,7 +121,8 @@ on a failed search), so a supervisor can ask "did any lane already learn X?" in 
   - the offline suites (fakes only, no network): `test-supervise.sh` (the loop), `test-host.sh` (host
     scripts, runtime modes, timers, snapshot), `test-init-repo.sh` (install, rulings, PR gate),
     `test-headless.sh` (every hook per role), `test-setup-matrix.sh` (the `/setup` permutations), `test-local-e2e.sh` (a local org end to end:
-    setup, two lanes, refused LANDs, adoption, the hourly job's snapshot, STOP);
+    setup, two lanes, refused LANDs, adoption, the hourly job's snapshot, STOP); `smoke-vps.sh` (remote mode on a
+    real, disposable Linux host over SSH — runbook in `docs/smoke-vps.md`);
     `test-vars.json` is their shared vars file.
 - `templates/repo/` — **the repo layer, mirrored 1:1 into the project** (`.tmpl` marks the four protected
   entries, so an agent editing the kit is not refused by the kit's own hook):

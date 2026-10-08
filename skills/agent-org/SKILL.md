@@ -145,7 +145,8 @@ never duplicating.
 **One user runs the org** (`org.json` `runtime`): **local** — the owner, as themselves, no worker user, no
 sudo, no `/srv` (the build queue goes in `<ORG_ROOT>/bin`); **remote** — a Linux VPS where `worker_user` runs
 the loop, git-sync, the snapshot and the builds. Nothing re-owns a repository: the repo must belong to that
-user (clone it as them).
+user (clone it as them). Remote mode has run on a real host only once `docs/smoke-vps.md` has a dated record:
+until then, run `scripts/smoke-vps.sh` on a disposable box before pointing a remote org at a real project.
 1. `ORG_ROOT` (default `~/agent-org`; remote e.g. `/srv/org`): `setup.mjs --scope org` writes `org.json`
    with local defaults; by hand, copy `KIT/scripts/org.example.json` (its example is remote) and fill it.
    Set `sync.push_main` to `true` only if the owner allowed pushes to main (a push to main may deploy); it
