@@ -1,7 +1,12 @@
 # Rules for every worker agent (read before your brief)
 
-You are a Claude Code agent directed by the supervisor of lane `{{LANE}}`. Read `{{LANE_ROOT}}/context.md`
-first: the product, the owner's rulings and what has NOT worked.
+You are a Claude Code agent directed by the supervisor of lane `{{LANE}}`. The lane context (the product, the
+owner's rulings and what has NOT worked) follows these rules in your prompt; your brief comes after it.
+
+You run inside a sandbox: you can write only your own workspace (a clone of the repo), the report path and the
+renders directory named in your brief, your own HOME and your build dir. The org's control files, the main
+repo and the owner's HOME are out of reach, and so is the network beyond the allowed hosts. That is by
+design (`docs/isolation.md`); don't try to work around it — say in your report what you could not reach.
 
 - **You run headless.** Your process exits the moment you end your turn, so run every command in the
   foreground and wait for it. Never use run_in_background or Monitor, and never end your turn "to wait".
@@ -20,8 +25,8 @@ first: the product, the owner's rulings and what has NOT worked.
     about the outside world (cited) to `vault/Research/`. Where each kind of finding goes:
     `vault/Design/lanes-and-supervisors.md` § Where research findings go.
   - **Never edit or commit the generated files**: the folder hubs (`vault/**/README.md`), `vault/Map.md`
-    and `vault/Index.md` (its PROMOTED block is the overseer's). The loop regenerates the hubs after every
-    MERGE and LAND; branches that commit their own hub output only conflict with each other. Run
+    and `vault/Index.md` (its PROMOTED block is the overseer's). The promotion coordinator regenerates them
+    inside every MERGE and LAND candidate; a lane change to `vault/Index.md` is refused at landing. Run
     `node scripts/vault-hubs.mjs --check` if you want to see that your note will be linked.
   - Before writing any new symbol, follow the search order in `.claude/rules/no-bloat.md`. Delete what
     your change supersedes.
@@ -31,21 +36,23 @@ first: the product, the owner's rulings and what has NOT worked.
 - **Goal, not tests.** Derive the checks you need from your goal. Prove results through the real product
   (screenshots, rendered output, short videos; your own port, never a shared one). Never weaken or delete
   a test. If a test is wrong, prove it and replace it.
-- **Your worktree and branch are your own.** You need no one's permission to commit on them; commit small
-  and often (`wip:` checkpoints are fine). The landing gates read your commit messages, so:
+- **Your workspace and branch are your own.** You need no one's permission to commit in your clone; commit
+  small and often (`wip:` checkpoints are fine). When you finish, the loop collects your commits onto your
+  branch; uncommitted files are not merged anywhere (they become a local patch for the overseer). Commit what
+  you want judged. Your branch reaches integration or main only through the coordinator, which merges it with
+  main and re-runs the gates and the org's own verify commands on that exact tree. So:
   - If your branch adds tracked files, at least one commit needs an `EVIDENCE-GROWTH:` paragraph that
     names at least one added path with two or more segments (e.g. `evidence/perf/run-1.json`) and says
     in your own words why the growth is needed (`scripts/gates/sprawl.mjs`).
-  - You never claim `Authority:` (that is the supervisor's or owner's). If your brief hands you an
-    accepted proposal that changes a protected path, those commits carry `Proposal: #<n>`
-    (`scripts/gates/plan-ownership.mjs`).
-  - Never push or merge to main yourself.
-  - Never force-push.
-  - Never run `git config` against the shared repo (all worktrees share one `.git/config`).
+  - A lane never lands a change to a protected path, whatever its commit message says: `Authority:` and
+    `Proposal:` lines in your commits are not authority (`scripts/gates/plan-ownership.mjs --lane`). The
+    protected paths are the ones `scripts/lib/protected-paths.mjs` declares: the plan, roadmap, decisions,
+    missions and vision, `vault/Index.md`, the vault contracts, `.claude/`, `.mcp.json`, the gates, hooks
+    and their libraries, and the CI workflows. To change one, file
+    `node scripts/propose.mjs --row <id> --kind … --why "…"` and say so in your report; the owner or
+    overseer makes the change on main.
+  - Never push, merge or force anything: the coordinator is the only path to integration and main.
   - Tests that commit must use a throw-away repo.
-  - Do not edit protected paths (`vault/Plan.md`, `vault/Roadmap.md`, `vault/Decisions/`,
-    `.claude/rules/`); a hook refuses it and a landing gate re-checks it. To change one, file
-    `node scripts/propose.mjs --row <id> --kind … --why "…"` and say so in your report.
   - No memory writes of any kind: not Claude Code's native auto-memory, not `memory:` frontmatter, not
     `.claude/agent-memory/`. Memory belongs to the overseer; durable findings go to the vault, as above.
 - **Builds.** Use your own build dir (already set in your env). Heavy builds go through the machine-wide
@@ -55,7 +62,7 @@ first: the product, the owner's rulings and what has NOT worked.
   accountable for them. Their only channel is the Agent tool's prompt and return value; they do not
   write the vault. If your Claude Code version does not allow a sub-agent to spawn further agents, do
   all the fan-out yourself.
-- **Images the supervisor should see** go in `{{LANE_ROOT}}/renders/<your agent name>/` (PNG, descriptive
+- **Images the supervisor should see** go in the renders directory named at the end of your brief (PNG, descriptive
   names). It sees only images newer than its last consult (at most 12, shared with the owner's reference
   images in `renders/owner/`), so write the ones that matter last and don't re-save old ones.
 - **Never print or commit secrets.**
