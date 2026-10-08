@@ -16,7 +16,7 @@ SB=$(mktemp -d /tmp/supervise-test.XXXXXX)
 ORG=$SB/org; REPO=$SB/repo; L=$ORG/lanes/t
 PASS=0; FAIL=0
 cleanup() {
-  pkill -f "sleep 611" 2>/dev/null; pkill -f "cd $L/wt/beta && sleep" 2>/dev/null
+  for p in "$SB"/org*/lanes/*/*.pid; do [ -f "$p" ] && kill -- "-$(cat "$p")" 2>/dev/null; done   # this sandbox's own sleepers only
   if [ "${KEEP:-}" = 1 ]; then echo "sandbox kept: $SB"; else rm -rf "$SB"; fi
 }
 trap cleanup EXIT
@@ -67,7 +67,7 @@ printf '%s\n' "$*" > "$LANE_ROOT/args-$AGENT_NAME.txt"
 mv "$raw" "$LANE_ROOT/stdin-$AGENT_NAME.txt"
 report=$(printf '%s' "$prompt" | grep -o 'Write your report to `[^`]*`' | head -1 | sed 's/.*`\(.*\)`/\1/')
 case "$AGENT_NAME" in
-  slowpoke|hang) sleep 611; exit 0;;     # never reports: overdue warning, then KILL / its deadline
+  slowpoke|hang) echo $$ > "$LANE_ROOT/$AGENT_NAME.pid"; sleep 611; exit 0;;   # never reports: overdue warning, then KILL / deadline
   sleeper) sleep 6;;                     # outlives a loop restart
   alpha) sleep 2;;
   beta) sleep 8;;
@@ -158,7 +158,7 @@ check "main checkout left clean" "[ -z \"\$(git -C $REPO status --porcelain)\" ]
 # overdue, kill, no-action
 check "REPORT OVERDUE logged once" "[ \$(grep -c 'REPORT OVERDUE slowpoke' $L/lane.log) = 1 ]"
 check "overdue flagged in the next prompt" "has $S/3.txt 'slowpoke  (REPORT OVERDUE'"
-check "KILL terminated the agent" "has $L/lane.log 'KILLED slowpoke' && has $L/lane.log 'agent slowpoke finished' && ! pgrep -f 'sleep 611' >/dev/null"
+check "KILL terminated the agent" "has $L/lane.log 'KILLED slowpoke' && has $L/lane.log 'agent slowpoke finished' && ! kill -0 \$(cat $L/slowpoke.pid) 2>/dev/null"
 check "NO ACTIONABLE BLOCK logged" "has $L/lane.log 'NO ACTIONABLE BLOCK in consult 4'"
 check "...and quoted into the next prompt" "has $S/5.txt 'produced no actionable block (first 500 chars:' && has $S/5.txt 'I think we should wait'"
 check "LEARN still journaled" "has $L/lane-memory.md 'alpha merged'"
