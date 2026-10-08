@@ -19,9 +19,19 @@ process.stdout.on('error', (e) => { if (e && e.code === 'EPIPE') process.exit(0)
  *
  *   node scripts/gates/plan-ownership.mjs           # grade HEAD's landing range
  *   node scripts/gates/plan-ownership.mjs --since <rev>
+ *   node scripts/gates/plan-ownership.mjs --since <rev> --lane    # a LANE's landing (supervise.py)
  *
- * EXIT: 0 pass · 1 a commit claimed no authority · 2 refused · 77 empty range (a skip,
- * never a pass).
+ * --lane: the range is a lane's work (agent and integration commits) on its way to main. A
+ * commit message is written by whoever made the commit, so in a lane's range `Authority: owner`
+ * is an assertion by the worker, not the owner's act (audit A1: a worker wrote that trailer on its
+ * own commit and its plan edit landed). So under --lane ANY commit touching a protected path fails,
+ * whatever it claims. Protected changes reach main only as the owner's or overseer's own commits
+ * (graded without --lane, where the claim is the author's own act), or by a proposal the owner
+ * applies. A future signed-authority check slots into the default mode: a claiming commit must also
+ * pass `git verify-commit` against an allowed-signers file holding the owner's key.
+ *
+ * EXIT: 0 pass · 1 a commit claimed no authority (or, under --lane, touched a protected path at
+ * all) · 2 refused · 77 empty range (a skip, never a pass).
  */
 import { execFileSync } from 'node:child_process'
 import path from 'node:path'
@@ -36,8 +46,9 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const CLAIM = /^\s*(Authority:\s*(supervisor|owner)|Proposal:\s*#\d+)\s*$/mi
 
 const argv = process.argv.slice(2)
-let since = null
+let since = null, lane = false
 for (let i = 0; i < argv.length; i++) {
+  if (argv[i] === '--lane') { lane = true; continue }
   if (argv[i] === '--since') {
     since = argv[++i]
     // A flag that is ignored is worse than one that is rejected: the caller believes it
@@ -45,7 +56,7 @@ for (let i = 0; i < argv.length; i++) {
     if (!since) { console.log('plan-ownership: --since needs a rev'); process.exit(2) }
     continue
   }
-  console.log(`plan-ownership: unrecognised argument '${argv[i]}' — accepts: --since <rev>`)
+  console.log(`plan-ownership: unrecognised argument '${argv[i]}' — accepts: --since <rev> --lane`)
   process.exit(2)
 }
 const git = (...a) => execFileSync('git', a, { cwd: ROOT, encoding: 'utf8', env: noGitEnv() }).trim()
@@ -73,7 +84,7 @@ if (!shas.length) {
 }
 
 let failed = 0, touched = 0
-console.log(`PLAN-OWNERSHIP — ${shas.length} commit(s) in ${range}`)
+console.log(`PLAN-OWNERSHIP — ${shas.length} commit(s) in ${range}${lane ? ' (a lane landing: no claim is accepted)' : ''}`)
 for (const sha of shas) {
   // --root so a repository's FIRST commit lists its files too (it has no parent to diff).
   const files = git('show', '--root', '--name-only', '--format=', sha).split('\n').filter(Boolean)
@@ -82,7 +93,11 @@ for (const sha of shas) {
   touched++
   const msg = git('log', '-1', '--format=%B', sha)
   const claim = msg.match(CLAIM)
-  if (claim) {
+  if (lane) {
+    failed++
+    console.log(`  FAIL ${sha.slice(0, 9)} changed ${hits.join(', ')} in a lane landing` +
+      (claim ? ` — its own "${claim[0].trim()}" is not authority` : ''))
+  } else if (claim) {
     console.log(`  ok   ${sha.slice(0, 9)} ${hits.length} protected file(s) — ${claim[0].trim()}`)
   } else {
     failed++
@@ -96,5 +111,7 @@ if (!touched) {
 }
 console.log(failed === 0
   ? `\nPLAN-OWNERSHIP PASS  (${touched} commit(s) touched a protected path, every one claimed authority)`
-  : `\nPLAN-OWNERSHIP FAIL: ${failed} commit(s) changed the plan, roadmap, decisions or rules claiming no authority.\nAdd 'Authority: supervisor' or 'Proposal: #<n>' to the commit message.`)
+  : lane
+    ? `\nPLAN-OWNERSHIP FAIL: ${failed} commit(s) in a lane landing changed protected paths. A lane never lands them;\npropose the change (node scripts/propose.mjs) and the owner or overseer makes it on main.`
+    : `\nPLAN-OWNERSHIP FAIL: ${failed} commit(s) changed protected paths claiming no authority.\nAdd 'Authority: supervisor' or 'Proposal: #<n>' to the commit message.`)
 process.exit(failed === 0 ? 0 : 1)
