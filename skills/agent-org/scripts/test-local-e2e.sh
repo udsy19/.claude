@@ -82,7 +82,9 @@ json.dump({"permissions": "default", "base_install": "global", "project": "Demo"
            "org": {"runtime": "local", "repo": sys.argv[6], "worker_user": "", "host": "",
                    "claude_bin": sys.argv[4], "supervisor": {"backend": "script", "command": sys.argv[5]},
                    "worker_models": {"opus": "fake-model"}, "default_worker_model": "opus",
-                   "agent_timeout_s": 300, "report_overdue_s": 120, "poll_interval_s": 1, "idle_wait_s": 2}},
+                   "agent_timeout_s": 300, "report_overdue_s": 120, "poll_interval_s": 1, "idle_wait_s": 2,
+                   # orchestration end to end; containment is test-adv-isolation.sh's (it runs the sandbox for real)
+                   "isolation": {"mode": "none"}}},
           open(sys.argv[2], "w"), indent=2)
 PY
 node "$KIT/scripts/setup.mjs" --scope org --install project --project "$P" --answers "$SB/answers.json" --bootstrap > "$SB/setup-org.out" 2>&1; rc=$?
