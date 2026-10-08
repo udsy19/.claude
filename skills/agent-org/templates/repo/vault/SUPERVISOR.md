@@ -17,14 +17,18 @@ only on the build box cannot be read by an agent on the laptop, reviewed in a di
 gate.
 
 Run as `ORG_ROLE=supervisor`: the set-up writes it to the untracked `.claude/settings.local.json`,
-so worker worktrees never inherit it. That is what lifts the ownership hook — and it is the only
+so worker workspaces never inherit it. That is what lifts the ownership hook — and it is the only
 thing that does, so never export it for a subagent. The owner runs as `ORG_ROLE=owner`.
 
 ---
 
 ## 1. What is yours alone
 
-`vault/Plan.md` · `vault/Roadmap.md` · `vault/Decisions/` · `.claude/rules/` · `.claude/settings.json`
+- **Intent:** `vault/Plan.md` · `vault/Roadmap.md` · `vault/Decisions/` · `vault/Missions/` · `vault/Vision.md` · `vault/Index.md`
+- **Contracts and instructions:** `vault/AGENTS.md` · `vault/SUPERVISOR.md` · `vault/Architecture.md` · `CLAUDE.md` (every one) · `.claude/rules/` · `.claude/agents/` · `.claude/skills/` · `.claude/settings.json` · `.mcp.json`
+- **Enforcement:** `scripts/gates/` · `scripts/hooks/` · `scripts/lib/protected-paths.mjs` · `scripts/lib/landing-range.mjs` · `scripts/lib/commit-trailers.mjs` · `scripts/lib/git-env.mjs` · `scripts/lib/argv.mjs` · `scripts/loop-guard.sh` · `scripts/loop-guard.count.test.sh` · `scripts/usage-hook.sh` · `scripts/gen-subject-index.py` · `scripts/vault-hubs.mjs` · `.github/workflows/`
+
+A lane never lands a change to any of these, whatever its commit message claims: a trailer is written by whoever makes the commit, so `scripts/gates/plan-ownership.mjs --lane` refuses them outright at a lane's landing. They reach main only as the owner's or overseer's own commits, or as a proposal the owner applies.
 
 Only the two roles `supervisor` and `owner` may write these. `scripts/hooks/agent-contract.mjs`
 refuses everyone else's edit, and `scripts/gates/plan-ownership.mjs` re-derives from git which
@@ -56,7 +60,7 @@ agent cannot tell what is left. Decompose it into `N.1 … N.k` FIRST.
 Copy them in. Do not link to them, and do not assume the role card carries them.
 
 ```
-You may NOT edit vault/Plan.md, vault/Roadmap.md, vault/Decisions/, .claude/rules/ or .claude/settings.json.
+You may NOT edit a protected path (scripts/lib/protected-paths.mjs: the plan, missions, vision, contracts, rules, gates, hooks, workflows).
 To change one:  node scripts/propose.mjs --row <id> --kind split|reorder|add|done|challenge --why "<reason WITH a number>"
 Your row, in full:  node scripts/plan-row.mjs <id>
 Which code is where: vault/Map-code.md   ·   who already implements X: node scripts/where.mjs <name> --branches
@@ -72,7 +76,7 @@ prompt is the ONLY channel you compose fresh every time.
 
 - **Never order an edit to a protected path.** Say instead: *when the row is progressed, file it
   with `scripts/propose.mjs`.*
-- **Never dispatch without a worktree, a port and a branch.** An agent in the shared checkout
+- **Never dispatch without its own workspace, a port and a branch.** An agent in the shared checkout
   watches HEAD move under it mid-task.
 - **Never omit what is NOT on main.** A row whose acceptance names a symbol that lives only on an
   unlanded branch sends the agent looking for it on main; it concludes nothing exists and writes a
@@ -121,10 +125,12 @@ decision is that it gets made again, worse, by someone with less context.**
 4. Lift durable findings into the vault (a report, a decision), regenerate the hubs and the Index,
    and keep [[Home]] NOW true.
 
-A lane supervisor's `LAND` is gated by its loop instead: it needs main checked out in the repo and
-`plan-ownership.mjs`, `sprawl.mjs` and `protected-paths.mjs` passing on the candidate (with main's gate
-code); a refusal is the lane's `reports/NNNN-zz-land-refused-<branch>.md` and a `REFUSED` line in the
-event feed. Read it before landing that branch by hand.
+A lane supervisor never lands anything itself: its `LAND` is a request to the promotion coordinator
+(`scripts/promote.py` in `ORG_ROOT`), which lands only that lane's `lane/<lane>/integration`, builds main +
+that branch in a throw-away worktree, runs `plan-ownership.mjs --lane`, `sprawl.mjs` and
+`protected-paths.mjs` with main's gate code and every org.json `verify` command on that exact tree, and
+moves main by compare-and-swap. A refusal is the lane's `reports/NNNN-zz-land-refused-<branch>.md` and a
+`REFUSED` line in the event feed. Read it before landing that branch by hand.
 
 ## 7. What you are actually optimising
 

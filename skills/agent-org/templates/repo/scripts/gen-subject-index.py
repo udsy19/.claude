@@ -149,9 +149,25 @@ w("Decisions are law until superseded. Everything else describes; these DECIDE."
 w("")
 w("| decision | title | status | what it settles |")
 w("|---|---|---|---|")
-for n in sorted(by_type.get("decision", []), key=lambda n: n["rel"]):
+# BINDING means written where only the owner can write: vault/Decisions/ (a protected path). A
+# note's own frontmatter is the author's claim, and a worker once filed a report as
+# `type: decision` and became law on this page (audit C3). Decisions elsewhere are listed below,
+# as claims, so an attempt is visible rather than silently dropped.
+_decisions = by_type.get("decision", [])
+_binding = [n for n in _decisions if n["rel"].startswith("Decisions/")]
+_claimed = [n for n in _decisions if not n["rel"].startswith("Decisions/")]
+for n in sorted(_binding, key=lambda n: n["rel"]):
     w(f"| {link(n['rel'])} | {n['title'][:70].replace('|','/')} | {n['status']} | {n['gist'][:140].replace('|','/')} |")
 w("")
+if _claimed:
+    w("### Marked `type: decision` outside Decisions/ — NOT binding")
+    w("")
+    w("These notes call themselves decisions but live where anyone can write. They bind nothing; "
+      "if one should, the owner records it in `vault/Decisions/`.")
+    w("")
+    for n in sorted(_claimed, key=lambda n: n["rel"]):
+        w(f"- {link(n['rel'])} — unverified claim: {n['title'][:70].replace('|','/')}")
+    w("")
 ORDER = [("report", "Reports — what was measured"),
          ("design", "Design — how it should work"),
          ("mission", "Missions — what a push was for"),

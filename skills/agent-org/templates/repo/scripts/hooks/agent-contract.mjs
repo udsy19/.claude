@@ -4,10 +4,11 @@
  *
  * Two jobs, both on Edit/Write:
  *
- *   1. OWNERSHIP. vault/Plan.md, vault/Roadmap.md, vault/Decisions/, .claude/rules/ and
- *      .claude/settings.json belong to the supervisor and the owner (scripts/lib/protected-paths.mjs). A subagent
- *      editing them is refused and told to use scripts/propose.mjs instead.
- *      `ORG_ROLE=supervisor` (or `owner`) lifts it.
+ *   1. OWNERSHIP. The protected paths (scripts/lib/protected-paths.mjs: intent, contracts,
+ *      enforcement code) belong to the supervisor and the owner. A subagent editing them is refused
+ *      and told to use scripts/propose.mjs instead. `ORG_ROLE=supervisor` (or `owner`) lifts it, but
+ *      never for a lane process (AGENT_NAME / AGENT_ORG_HEADLESS): a worker that sets ORG_ROLE=owner
+ *      in its own environment or settings is still a worker.
  *
  *   2. THE CONTRACT. The first Edit/Write of a session is refused ONCE, and the refusal
  *      carries vault/AGENTS.md in full. This is deliberately not "check whether the agent
@@ -15,12 +16,15 @@
  *      satisfied by a Read the agent never looked at. Delivering the text in the block
  *      message puts it in the model's context as a fact, then gets out of the way.
  *
- * CEILING, stated rather than discovered later. This gates the Edit/Write TOOLS. An agent
- * can still write a protected file through Bash (`sed -i`, a heredoc), and no PreToolUse
- * matcher on Bash can reliably tell a write from a read. That hole is closed at the LANDING
- * boundary instead, by scripts/gates/plan-ownership.mjs, which re-derives from git which
- * commits touched a protected path and what authority they claimed. Two checks at two
- * layers, neither trusting the other — which is the point.
+ * THIS IS ADVISORY UX, NOT A SECURITY BOUNDARY. It gates the Edit/Write TOOLS, so an agent can
+ * still write a protected file through Bash (`sed -i`, a heredoc), and the hook runs from the
+ * agent's own worktree, which the agent can rewrite (audit A8). Its job is to tell a well-meaning
+ * agent early and say what to do instead. The boundaries are elsewhere and do not trust it:
+ *   - the landing: scripts/gates/plan-ownership.mjs --lane re-derives from git every commit a lane
+ *     brings in and refuses any that touches a protected path, whatever it claims, using the gate
+ *     code from main, not from the candidate;
+ *   - the sandbox the worker runs in (filesystem, environment, network), which is what stops a
+ *     write outside its worktree at all.
  *
  * Exit 2 blocks the tool call and returns stderr to the model. Exit 0 allows.
  * ANY internal error exits 0 — a broken hook must not wedge the fleet, and a hook that
@@ -37,6 +41,23 @@ const ROOT = process.env.CLAUDE_PROJECT_DIR ||
   path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 
 function read(p) { try { return fs.readFileSync(p, 'utf8') } catch { return null } }
+
+// A path INSIDE the project is matched relative to its root, so the project's own location cannot make every file
+// look protected (a checkout under …/.claude/.claude/skills/… contains the protected ".claude/skills/" as an
+// ancestor). Compared against the root and its real path (macOS /var -> /private/var), resolving the target's nearest
+// existing parent. A path OUTSIDE the project keeps the conservative substring match (another checkout's rules file is
+// still refused): that side fails closed.
+const ROOTS = [...new Set([path.resolve(ROOT), (() => { try { return fs.realpathSync(ROOT) } catch { return path.resolve(ROOT) } })()])]
+function inProject(t) {
+  if (typeof t !== 'string' || !path.isAbsolute(t)) return t
+  const under = (p) => { for (const b of ROOTS) { const r = path.relative(b, p); if (r && !r.startsWith('..') && !path.isAbsolute(r)) return r } return null }
+  let r = under(path.resolve(t))
+  if (r !== null) return r
+  let p = path.resolve(t), tail = ''
+  while (!fs.existsSync(p) && path.dirname(p) !== p) { tail = path.join(path.basename(p), tail); p = path.dirname(p) }
+  try { r = under(path.join(fs.realpathSync(p), tail)) } catch { r = null }
+  return r !== null ? r : t
+}
 
 let raw = ''
 try { raw = fs.readFileSync(0, 'utf8') } catch { process.exit(0) }
@@ -62,8 +83,12 @@ function stringsIn(v, depth = 0, out = []) {
   else if (v && typeof v === 'object') for (const k of Object.keys(v)) stringsIn(v[k], depth + 1, out)
   return out
 }
-const payloadStrings = target ? [target] : stringsIn(ev.tool_input)
-const role = String(process.env.ORG_ROLE || 'subagent').trim().toLowerCase()
+const payloadStrings = (target ? [target] : stringsIn(ev.tool_input)).map(inProject)
+// Fail closed: a missing or unknown role is a subagent, and a lane process is never an author,
+// whatever ORG_ROLE says (a worker can set its own environment).
+const laneProcess = !!(process.env.AGENT_ORG_HEADLESS || process.env.AGENT_NAME)
+const declared = String(process.env.ORG_ROLE || 'subagent').trim().toLowerCase()
+const role = laneProcess && declared !== 'supervisor' && AUTHORS.includes(declared) ? 'subagent' : declared
 
 // ---- 0. lane processes --------------------------------------------------------
 // supervise.py starts every lane process with AGENT_ORG_HEADLESS=1; workers also carry
@@ -96,9 +121,9 @@ if (!AUTHORS.includes(role)) {
     process.stderr.write(
 `REFUSED — ${hit.path} is ${hit.what}, and it is not yours to edit.
 
-You are running as role "${role}". Only the supervisor and the owner write the plan, the
-roadmap, the decisions, the rules and the hooks that enforce them; that is what stops five agents holding five different
-ideas of what the work is.
+You are running as role "${role}". Only the supervisor and the owner write the protected paths
+(the plan, missions, vision, decisions, contracts, rules, and the gates and hooks that enforce
+them); that is what stops five agents holding five different ideas of what the work is.
 
 PROPOSE it instead — this reaches the supervisor and is answered, not dropped:
 

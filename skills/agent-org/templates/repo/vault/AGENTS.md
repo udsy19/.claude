@@ -55,14 +55,19 @@ owner ──────────── sets vision, rules on blocked decisio
                               a session note. Proposes; never decrees.
 ```
 
-**You may write:** code, tests, gates, evidence under `evidence/<your-dir>/` (with a
+**You may write:** code, tests, evidence under `evidence/<your-dir>/` (with a
 README), reports under `vault/Reports/`, and, in an interactive session, your own session note in
 `vault/Sessions/` (a lane worker writes none; the hook refuses it).
 
-**You may NOT write:** `vault/Plan.md`, `vault/Roadmap.md`, `vault/Decisions/`,
-`.claude/rules/`, `.claude/settings.json`. These are the supervisor's and the owner's. A hook enforces it — an
-`Edit` to one of those paths is refused, and tells you what to do instead — and a landing gate
-re-checks every commit, because the hook cannot see a Bash write.
+**You may NOT write** the protected paths, declared once in `scripts/lib/protected-paths.mjs`:
+
+- **Intent:** `vault/Plan.md` · `vault/Roadmap.md` · `vault/Decisions/` · `vault/Missions/` · `vault/Vision.md` · `vault/Index.md`
+- **Contracts and instructions:** `vault/AGENTS.md` · `vault/SUPERVISOR.md` · `vault/Architecture.md` · `CLAUDE.md` (every one) · `.claude/rules/` · `.claude/agents/` · `.claude/skills/` · `.claude/settings.json` · `.mcp.json`
+- **Enforcement:** `scripts/gates/` · `scripts/hooks/` · `scripts/lib/protected-paths.mjs` · `scripts/lib/landing-range.mjs` · `scripts/lib/commit-trailers.mjs` · `scripts/lib/git-env.mjs` · `scripts/lib/argv.mjs` · `scripts/loop-guard.sh` · `scripts/loop-guard.count.test.sh` · `scripts/usage-hook.sh` · `scripts/gen-subject-index.py` · `scripts/vault-hubs.mjs` · `.github/workflows/`
+
+These are the supervisor's and the owner's. A hook refuses an `Edit` to one of them and tells you
+what to do instead; it is a courtesy, not the boundary, because it cannot see a Bash write. The
+boundary is the landing: A lane never lands a change to any of these, whatever its commit message claims: a trailer is written by whoever makes the commit, so `scripts/gates/plan-ownership.mjs --lane` refuses them outright at a lane's landing. They reach main only as the owner's or overseer's own commits, or as a proposal the owner applies.
 
 ## 3. How a task runs
 
@@ -90,8 +95,9 @@ node scripts/propose.mjs --row 15 --kind split \
   --why "row 15 is 10-20 subtasks, not one; here is the decomposition"
 ```
 
-That appends to `vault/_log/proposals.jsonl` (in the main checkout, even from a worktree) and
-tells the supervisor. The supervisor must then do one of exactly two things, and record which:
+In an interactive session that appends to `vault/_log/proposals.jsonl` in the main checkout and
+tells the supervisor. A sandboxed lane worker cannot reach the main checkout: it writes the same
+proposal (row, kind, why) under `## Open questions` in its report, and its supervisor relays it. The supervisor must then do one of exactly two things, and record which:
 
 - **reject it citing a measurement** — not an opinion, a number or a file;
 - **commission research**, then rule, and write the ruling to `vault/Decisions/`.

@@ -58,11 +58,14 @@ jobs:
     # No identity auto-detection on any OS: a suite that sandboxes HOME must set its own git identity
     # (Linux cannot auto-detect one; macOS can, which once hid this).
     env:
+      GIT_CONFIG_NOSYSTEM: "1"   # no system defaults either (Apple's CLT gitconfig sets init.defaultBranch=main)
       GIT_CONFIG_COUNT: "1"
       GIT_CONFIG_KEY_0: user.useConfigOnly
       GIT_CONFIG_VALUE_0: "true"
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # the P0 controls run the adversarial suites against the pre-P0 kit (e318f8b)
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -97,3 +100,30 @@ jobs:
           [ "$rows" -gt 0 ] && [ "$red" = "$rows" ]
       - name: local org end to end (G)
         run: bash skills/agent-org/scripts/test-local-e2e.sh
+      - name: sandbox runtime (srt) for the isolation suite
+        # Linux: bubblewrap + user namespaces, which Ubuntu 24.04 restricts through AppArmor
+        # (https://code.claude.com/docs/en/sandboxing#set-up-linux-and-wsl2). macOS: Seatbelt, built in.
+        run: |
+          npm install -g @anthropic-ai/sandbox-runtime
+          if [ "$RUNNER_OS" = Linux ]; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq bubblewrap socat ripgrep
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+          fi
+          srt --version
+      - name: adversarial — authority and gate integrity (P0)
+        run: bash skills/agent-org/scripts/test-adv-authority.sh
+      - name: adversarial — promotion coordinator (P0)
+        run: bash skills/agent-org/scripts/test-adv-promotion.sh
+      - name: adversarial — sandboxed workers (P0)
+        env:
+          REQUIRE_SANDBOX: "1"   # "the sandbox cannot run here" is a failure, never a skip
+        run: bash skills/agent-org/scripts/test-adv-isolation.sh
+      - name: controls — each adversarial suite must go red against the pre-P0 kit or with the sandbox off
+        if: runner.os == 'Linux'
+        run: |
+          old=$(mktemp -d)/kit; git worktree add -q --detach "$old" e318f8b
+          red() { if "$@" > "$old.out" 2>&1; then echo "PASSED, must fail: $*"; tail -5 "$old.out"; exit 1; fi
+                  echo "red as required: $* -> $(grep -E 'passed|SKIP' "$old.out" | tail -1)"; }
+          red env KIT_UNDER_TEST="$old/skills/agent-org" bash skills/agent-org/scripts/test-adv-authority.sh
+          red env KIT="$old/skills/agent-org" bash skills/agent-org/scripts/test-adv-promotion.sh
+          red env ISOLATION_MODE=none REQUIRE_SANDBOX=1 bash skills/agent-org/scripts/test-adv-isolation.sh

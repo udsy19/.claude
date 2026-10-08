@@ -46,12 +46,24 @@ if (!PROTECTED.length || !DOCS.length || !ENFORCERS.length) {
 }
 console.log(`PROTECTED-PATHS — ${PROTECTED.length} paths, ${DOCS.length} documents, ${ENFORCERS.length} enforcers`)
 
-// 1. the enforcers must IMPORT the declaration, never restate it
+// 1. the enforcers must IMPORT the declaration, and USE it, never restate it. Graded on the code
+//    with comments removed: a gate replaced by `// uses ../lib/protected-paths.mjs` plus
+//    `process.exit(0)` once passed a text grep for the file name (audit A2).
+const code = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:\\])\/\/.*$/gm, '$1')
+const IMPORT = /^\s*import\s*\{([^}]*)\}\s*from\s*['"]\.\.\/lib\/protected-paths\.mjs['"]/m
 for (const f of ENFORCERS) {
   const src = read(f)
   if (!ok(src !== null, `${f} exists`)) continue
-  ok(/protected-paths\.mjs/.test(src), `${f} imports the shared declaration`)
-  ok(!/const PROTECTED\s*=\s*\[/.test(src), `${f} does NOT carry its own copy of the list`)
+  const c = code(src)
+  const m = c.match(IMPORT)
+  // the local names bound to the declaration's matcher or list (`protectedHit as hit` binds `hit`)
+  const bound = m ? m[1].split(',').map((x) => x.trim().split(/\s+as\s+/))
+    .filter(([orig]) => orig === 'protectedHit' || orig === 'PROTECTED').map((p) => p[p.length - 1]) : []
+  const rest = m ? c.slice(c.indexOf(m[0]) + m[0].length) : ''
+  const used = bound.filter((n) => new RegExp(`\\b${n}\\b`).test(rest))
+  ok(!!m, `${f} imports the shared declaration (an import statement, not a mention)`)
+  ok(used.length > 0, `${f} uses what it imports from it`)
+  ok(!/const PROTECTED\s*=\s*\[/.test(c), `${f} does NOT carry its own copy of the list`)
 }
 
 // 2. every document names every path

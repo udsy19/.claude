@@ -25,6 +25,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      # The judge comes from the base, not from the change it judges: a PR that rewrites a gate
+      # would otherwise run its own rewritten gate on itself (audit A3). The PR's own copies of
+      # these paths are graded as changes like any other file (they are protected paths).
+      - name: gate code from the base branch
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          if git cat-file -e "origin/$BASE_REF:scripts/gates/plan-ownership.mjs" 2>/dev/null; then
+            git checkout "origin/$BASE_REF" -- scripts/gates scripts/lib
+          else
+            echo "the base has no gate code yet (this PR installs the kit): its own gates run this once"
+          fi
       - name: org board
         run: bash scripts/gates/org-board.sh
       # Run on their own as well, so a red ownership or sprawl verdict is its own failed step.

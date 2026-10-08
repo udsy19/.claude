@@ -102,8 +102,24 @@ need "$CL" "npm i -g @anthropic-ai/claude-code   (then log in: claude → /login
 [ "$SUPB" = codex ] && need codex "npm i -g @openai/codex   (then: codex login --device-auth)"
 [ -n "$MISSING" ] && { echo "install the missing tools, then re-run"; exit 3; }
 case $CL in /*) ;; *) echo "NOTE: claude_bin \"$CL\" is not absolute; set it to $(command -v "$CL") in org.json (workers run with worker_env.PATH, which may not find it)";; esac
+# isolation (docs/isolation.md): agents run inside the sandbox runtime; supervise.py refuses to start without it
+ISO=$(j '(d.get("isolation") or {}).get("mode", "srt")')
+if [ "$ISO" = srt ]; then
+  SRTB=$(j '(d.get("isolation") or {}).get("srt_bin", "srt")')
+  command -v "$SRTB" >/dev/null || echo "WARN: isolation: the sandbox runtime ($SRTB) is not installed — lanes refuse to start until it is: npm i -g @anthropic-ai/sandbox-runtime"
+  if [ "$OS" = Linux ]; then
+    for t in bwrap socat rg; do command -v "$t" >/dev/null || echo "WARN: isolation: $t is missing — apt-get install bubblewrap socat ripgrep"; done
+    [ "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null)" = 1 ] && \
+      echo "WARN: isolation: this kernel blocks bubblewrap's user namespaces (Ubuntu 24.04+) — as root, add the bwrap AppArmor profile in docs/isolation.md"
+  fi
+else
+  echo "WARN: isolation.mode is \"$ISO\": agents run UNSANDBOXED, with everything $ME can read and write (docs/isolation.md)"
+fi
+TOK=$(j '(d.get("isolation") or {}).get("auth_token_file") or ""'); [ -n "$TOK" ] || TOK=$ORG_ROOT/secrets/claude-oauth-token
+mkdir -p "$(dirname "$TOK")" && chmod 700 "$(dirname "$TOK")"
+[ -s "$TOK" ] || echo "NOTE: worker auth: agents get their own HOME, so they authenticate with a token: run \`claude setup-token\` and save the token to $TOK (chmod 600)"
 mkdir -p "$ORG_ROOT"/{lanes,logs,templates,locks}
-cp "$KIT"/{supervise.py,lane-metrics.py,git-sync.sh,state-snapshot.sh,lane-events.sh,lanes.sh} "$ORG_ROOT/"; chmod +x "$ORG_ROOT"/*.sh
+cp "$KIT"/{supervise.py,promote.py,orgstate.py,lane-metrics.py,git-sync.sh,state-snapshot.sh,lane-events.sh,lanes.sh} "$ORG_ROOT/"; chmod +x "$ORG_ROOT"/*.sh
 cp -R "$KIT/../templates/lane" "$ORG_ROOT/templates/"          # lanes.sh in ORG_ROOT fills new lanes from these
 if [ "$MODE" = local ] || [ -w "$BIN" ]; then install_bin; fi   # remote: root installed it in phase 1
 # the project rules require these two skills; nothing else of the owner's global config is installed here
