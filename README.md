@@ -231,9 +231,9 @@ OWNER        vision · rulings · spend/access · judges by looking
   │
 OVERSEER     your Claude session: relays answers, audits evidence, keeps memory + vault + handoff current
   │
-SUPERVISOR   one per lane, read-only (Claude or codex): plans, briefs workers, judges evidence, merges/lands
+SUPERVISOR   one per lane, read-only (Claude or codex): plans, briefs workers, judges evidence, requests merges/lands
   │
-WORKER       a Claude Code agent: one task, own worktree + branch, builds, screenshots, checkpointed report
+WORKER       a Claude Code agent in a sandbox: one task, own clone + branch, builds, screenshots, checkpointed report
   │
 SUB-AGENT    the worker's helpers: research, review, parallel exploration
 ```
@@ -243,7 +243,9 @@ Goals go down, evidence comes up. Around the chain the kit installs:
 - **an Obsidian vault as mission control**: Vision, Plan, Roadmap, Missions, Decisions and Sessions, with generated hubs and an Index;
 - **three memory layers**: auto-memory for corrections and preferences, the vault and `.claude/rules/owner-rulings.md` for project knowledge and the owner's standing rulings, and per-lane memory for each supervisor;
 - **seven rules** plus the hooks, role cards (`builder`, `reviewer`, `researcher`, `bug-fixer`, …) and gates that enforce them (`scripts/gates/org-board.sh`, and a PR-gate workflow);
-- **ops**: git sync, an hourly state snapshot, an event feed with login probes, landings that run the gates first, daily spend caps per lane, and safe lane restarts that keep workers alive.
+- **one promotion coordinator** (`promote.py`): the only process that moves a lane's integration branch or `main`. It verifies `main` + the request as one tree with your own `verify` commands, records every decision and its evidence in a hash-chained state store (`state/org.db`, mirrored to a `state/journal` branch), and derives "done" from the mission's Definition of done instead of taking an agent's word for it;
+- **a sandbox around every agent** (`docs/isolation.md`): its own clone, no reads of your HOME or the org's control files, network only to Claude and the hosts you allow;
+- **ops**: git sync, an hourly state snapshot, an event feed with login probes, daily spend caps per lane, and safe lane restarts that keep workers alive.
 
 **Use it** — in Claude Code, in any repo:
 
@@ -251,7 +253,7 @@ Goals go down, evidence comes up. Around the chain the kit installs:
 /setup                          (pick the full org)  — or —  /agent-org set up the agent organisation for this project
 ```
 
-Claude interviews you about the project, runtime (locally as you, or on a Linux VPS as a worker user), models and lanes, shows a summary for your yes, then installs and starts everything. The only steps left to you are the `claude`/`codex` logins, typed in your own terminal. Day-to-day commands are in [`skills/agent-org/README.md`](skills/agent-org/README.md), and the full design (every guard and the failure it exists for) is in [`skills/agent-org/docs/HIERARCHY.md`](skills/agent-org/docs/HIERARCHY.md).
+Claude interviews you about the project, runtime (locally as you, or on a Linux VPS as a worker user), models and lanes, shows a summary for your yes, then installs and starts everything. The only steps left to you are the logins (`claude setup-token` for the agents' token file, `codex` if a codex supervisor), typed in your own terminal. Day-to-day commands are in [`skills/agent-org/README.md`](skills/agent-org/README.md), and the full design (every guard and the failure it exists for) is in [`skills/agent-org/docs/HIERARCHY.md`](skills/agent-org/docs/HIERARCHY.md).
 
 It reuses this config rather than duplicating it: the `pre-edit-scan` and `memory-discipline` skills its rules depend on are the ones in `skills/`, and `references/orchestration-patterns.md` lists it as Pattern 6 (supervised lanes). It is also the most expensive pattern here, a supervisor consult per cycle plus up to N workers per lane, so use it for ongoing efforts, not single features.
 
@@ -283,11 +285,16 @@ Agent Skills can execute code (scripts, and `!`-prefixed shell blocks run on loa
 - The bundled third-party skills were scanned for obvious exfiltration / shell-escape / credential-read patterns and ran clean at bundling time, but you should verify for your own threat model.
 - `ui-ux-pro-max` ships a local Python CLI (queries bundled CSVs — no network); the `accesslint-*` skills drive a local Chrome via an MCP server. Review both if that matters to you.
 - The hooks only ever read tool inputs and write to local cache and state dirs; none phone home.
-- `agent-org` runs agents with permissions skipped, inside their own worktrees. Safety comes from roles and gates instead: a Claude supervisor gets only read and web-research tools, supervisor output is validated before it touches git, a landing runs the gates first, and each lane has daily spend caps. It pushes lane branches, and main only if you set `sync.push_main`. Its hourly lane-state snapshot is pushed to `origin` too, so anyone who can read the repo can read it (`org.json` is reduced to an allowlist of known-safe keys; the rest are named in the snapshot log). On a VPS it runs as a separate worker user (its bootstrap creates one). It never handles secrets: you type logins into your own terminal.
+- `agent-org` runs agents with permissions skipped, so its safety rests on what the machine and the coordinator enforce, not on what an agent chooses to do:
+  - **Enforced by the sandbox** (`docs/isolation.md`): every worker and a Claude supervisor run inside the sandbox runtime (Seatbelt on macOS, bubblewrap on Linux), in their own clone, with no reads of your HOME, the org's control files or the main repo, network only to Claude and `isolation.allowed_domains`, and a scrubbed environment. Limits: an agent can read its own auth token; a broad allowed domain can be abused (keep it narrow); workers and the loop share one OS user, so a sandbox escape reaches that user; the runtime is a beta research preview.
+  - **Enforced by the coordinator**: only `promote.py` moves integration or `main`, and only after main's own gates and your `verify` commands pass on the exact merged tree; a lane can never land a change to a protected path (plan, missions, rules, contracts, gates, hooks, workflows), whatever its commit messages claim; "done" is derived from the Definition of done. Every decision is a record in a hash-chained store.
+  - **Advisory only**: the PreToolUse contract hook, the role cards and the prompts. Worker reports reach the supervisor fenced as untrusted text, but whether a model follows injected instructions is not something the kit can prove; that is why nothing an agent says moves a ref.
+  - **Not yet proven**: remote mode has not run on a real host yet (`smoke-vps.sh` exists on its own branch), and the Linux sandbox is exercised by CI on GitHub's Ubuntu runners, not yet on a real VPS. Evidence log files live on the host; only their hashes and records are in the `state/journal` branch.
+  - It pushes lane branches, the `state/journal` branch, and `main` only if you set `sync.push_main`. The hourly lane-state snapshot is pushed to `origin` too (`org.json` reduced to an allowlist of known-safe keys). The only secret it holds is the agents' token file you write (`isolation.auth_token_file`, mode 600).
 
 ## CI
 
-`.github/workflows/ci.yml` runs on every push and PR. A lint job (Ubuntu) runs shellcheck over the hooks and the agent-org scripts, checks that every JSON config parses, that every `skills/*/SKILL.md` has YAML frontmatter with `name` and `description`, that no Python bytecode is tracked, and that the README's skill count matches `skills/`. A test job on Ubuntu and macOS runs every `*.test.mjs` under `node --test`, the loop-guard cases, and the agent-org suites: the lane loop, the host scripts, the init-repo e2e with `org-board.sh`, the headless audit, the `/setup` permutation matrix, and a local org run end to end (setup, two lanes, refused landings, a restart adopting a running agent, the hourly snapshot, STOP). All of them use fakes; none needs a login or the network.
+`.github/workflows/ci.yml` runs on pushes to `main` and on every PR (one run per change; a newer commit cancels the run it supersedes). A lint job (Ubuntu) runs shellcheck over the hooks and the agent-org scripts, checks that every JSON config parses, that every `skills/*/SKILL.md` has YAML frontmatter with `name` and `description`, that no Python bytecode is tracked, and that the README's skill count matches `skills/`. A test job on Ubuntu and macOS runs every `*.test.mjs` under `node --test`, the loop-guard cases, and the agent-org suites: the lane loop, the host scripts, the init-repo e2e with `org-board.sh`, the headless audit, the `/setup` permutation matrix, and a local org run end to end (setup, two lanes, refused landings, a restart adopting a running agent, the hourly snapshot, STOP). Then the adversarial suites: forged authority and neutered gates, the promotion coordinator under concurrency, crashes and lying workers, and a hostile worker and supervisor inside the real sandbox (the job installs it: bubblewrap with user namespaces on Ubuntu, Seatbelt on macOS; a missing sandbox fails the run). Control steps prove the tests test something: the authority and promotion suites must go red against the pre-P0 kit, the isolation suite must go red with the sandbox off, and the `/setup` matrix's gate rows must go red with the vault-gate hook removed. All of it uses fakes; none needs a login.
 
 ## Acknowledgements & credits
 
