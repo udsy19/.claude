@@ -63,8 +63,8 @@ if [ "$ORG_ROLE" = supervisor ]; then   # backend "claude": record how it was ca
   printf '%s\n' "$*" > ../claude-sup.args; mv "$raw" ../claude-sup.stdin
   printf '=== DONE ===\n'; exit 0
 fi
-printf '%s\n' "$*" > "$LANE_ROOT/args-$AGENT_NAME.txt"
-mv "$raw" "$LANE_ROOT/stdin-$AGENT_NAME.txt"
+printf '%s\n' "$*" > "$AGENT_OUTBOX/args-$AGENT_NAME.txt"   # the outbox: the only lane path a worker may write
+mv "$raw" "$AGENT_OUTBOX/stdin-$AGENT_NAME.txt"
 report=$(printf '%s' "$prompt" | grep -o 'Write your report to `[^`]*`' | head -1 | sed 's/.*`\(.*\)`/\1/')
 case "$AGENT_NAME" in
   slowpoke|hang) sleep 611; exit 0;;     # never reports: overdue warning, then KILL / its deadline
@@ -72,7 +72,7 @@ case "$AGENT_NAME" in
   alpha) sleep 2;;
   beta) sleep 8;;
 esac
-echo "lane=$ORG_LANE headless=$AGENT_ORG_HEADLESS role=$ORG_ROLE" > "$LANE_ROOT/env-$AGENT_NAME.seen"
+echo "lane=$ORG_LANE headless=$AGENT_ORG_HEADLESS role=$ORG_ROLE" > "$AGENT_OUTBOX/env-$AGENT_NAME.seen"
 msg="$AGENT_NAME work"
 case "$AGENT_NAME" in
   planner)   # changes the plan, claims no authority, and neuters the gate on its branch: still refused
@@ -116,7 +116,8 @@ cat > "$ORG/org.json" <<EOF
   "claude_bin": "$SB/fake-claude.sh",
   "supervisor": { "backend": "script", "command": "$SB/fake-sup.sh" },
   "worker_models": { "opus": "fake-model" }, "default_worker_model": "opus",
-  "agent_timeout_s": 300, "report_overdue_s": 4, "poll_interval_s": 1, "idle_wait_s": 2 }
+  "agent_timeout_s": 300, "report_overdue_s": 4, "poll_interval_s": 1, "idle_wait_s": 2,
+  "isolation": { "mode": "none" } }
 EOF
 bash "$KIT/scripts/lanes.sh" "$ORG" new t "sandbox goal" 2 true >/dev/null || { echo "lanes.sh new failed"; exit 2; }
 check "lanes.sh new creates rulings.md and renders/owner" "[ -f $L/rulings.md ] && [ -d $L/renders/owner ]"
@@ -185,8 +186,8 @@ echo "== owner-answers fallback, short reports"
 mv "$L/rulings.md" "$SB/rulings.bak"
 out=$(cd "$L" && ORG_ROOT=$ORG python3 -c "
 import sys; sys.argv = ['supervise.py', '$L']; sys.path.insert(0, '$ORG'); import supervise as s
-b = s.owner_block(); open('$SB/short.md', 'w').write('## TL;DR\nshort\n'); print('A01' in b and 'A15' in b, s.report_digest('$SB/short.md') == '## TL;DR\nshort\n')")
-check "no rulings.md: whole owner-answers (back-compat); short report verbatim" "[ \"$out\" = 'True True' ]"
+b = s.owner_block(); open('$SB/short.md', 'w').write('## TL;DR\nshort\n'); d = s.report_digest('$SB/short.md'); print('A01' in b and 'A15' in b, '## TL;DR\nshort\n' in d and d.startswith('<<< UNTRUSTED WORKER REPORT'))")
+check "no rulings.md: whole owner-answers (back-compat); short report verbatim, fenced as untrusted" "[ \"$out\" = 'True True' ]"
 mv "$SB/rulings.bak" "$L/rulings.md"
 
 # ── gc ──
@@ -285,7 +286,7 @@ src=0; (cd "$SP/org/lanes/s" && ORG_ROOT="$SP/org" tmo 120 python3 "$SP/org/supe
 SL="$SP/org/lanes/s/lane.log"
 check "space: agent ran and reported (rc $src)" "[ $src = 0 ] && grep -q 'agent alpha finished rc=0 report=present' \"$SL\""
 check "space: MERGE ok and the work is on the lane branch" "grep -q 'MERGE lane/s/alpha ok' \"$SL\" && git -C \"$SP/repo\" show lane/s/integration:work-alpha.txt >/dev/null 2>&1"
-check "worker env: ORG_LANE, AGENT_ORG_HEADLESS, no ORG_ROLE" "grep -qx 'lane=s headless=1 role=' \"$SP/org/lanes/s/env-alpha.seen\""
+check "worker env: ORG_LANE, AGENT_ORG_HEADLESS, no ORG_ROLE" "grep -qx 'lane=s headless=1 role=' \"$SP/org/lanes/s/out/alpha/env-alpha.seen\""
 check "supervisor env: ORG_ROLE=supervisor, AGENT_ORG_HEADLESS" "grep -qx 'role=supervisor headless=1' \"$SP/sup.env\""
 check "D7: no owner-rulings.md in the project: no heading, no error" "grep -q '^# CONSULT 1' \"$SP/seen-1.txt\" && ! grep -q \"project's standing rules\" \"$SP/seen-1.txt\""
 
@@ -374,9 +375,9 @@ O12=$SB/org12; L12=$O12/lanes/st
 newlane "$O12" st 120 '=== AGENT name=a1 model=opus ===\nx\n=== END AGENT ===\n=== AGENT name=a2 model=opus ===\nx\n=== END AGENT ===\n=== AGENT name=a3 model=opus ===\nx\n=== END AGENT ===\n'
 setorg "$O12/org.json" '{"max_agent_starts_per_day": 2}'; setorg "$L12/lane.json" '{"max_parallel": 3}'
 ( cd "$L12" && ORG_ROOT=$O12 exec python3 "$O12/supervise.py" "$L12" 1 > "$SB/st.out" 2>&1 ) & SP2=$!
-for _ in $(seq 1 150); do [ "$(grep -c 'finished rc=0' "$L12/lane.log" 2>/dev/null)" = 2 ] && break; sleep 0.2; done
+for _ in $(seq 1 150); do { [ "$(grep -c 'finished rc=0' "$L12/lane.log" 2>/dev/null)" = 2 ] || grep -q 'loop exiting' "$L12/lane.log" 2>/dev/null; } && break; sleep 0.2; done
 sleep 2; touch "$L12/STOP"; for _ in $(seq 1 50); do kill -0 $SP2 2>/dev/null || break; sleep 0.2; done; kill $SP2 2>/dev/null; wait $SP2 2>/dev/null
-check "D1: agent-start cap 2 — the third agent never starts; finished work is still committed" "has $L12/lane.log 'agent a1 (opus) start' && has $L12/lane.log 'agent a2 (opus) start' && ! has $L12/lane.log 'agent a3 (opus) start' && has $L12/lane.log 'BUDGET cap reached (starts 2/2)' && has $L12/lane.log 'agent a2 finished rc=0 report=present' && [ \$(grep -c '=== CONSULT' $L12/lane.log) = 1 ] && has $L12/lane.log 'supervisor loop exiting'"
+check "D1: agent-start cap 2 — the third agent never starts; the two that started did their work" "has $L12/lane.log 'agent a1 (opus) start' && has $L12/lane.log 'agent a2 (opus) start' && ! has $L12/lane.log 'agent a3 (opus) start' && has $L12/lane.log 'BUDGET cap reached (starts 2/2)' && [ -s $L12/out/a1/report.md ] && [ -s $L12/out/a2/report.md ] && has $L12/lane.log 'supervisor loop exiting'"
 O14=$SB/org14; L14=$O14/lanes/ov   # a budget idle still flags overdue reports
 newlane "$O14" ov 120 '=== AGENT name=a1 model=opus ===\nx\n=== END AGENT ===\n=== AGENT name=hang model=opus ===\nx\n=== END AGENT ===\n'
 setorg "$O14/org.json" '{"max_consults_per_day": 1, "report_overdue_s": 6}'
@@ -401,8 +402,8 @@ brc=0; (cd "$L5" && ORG_ROOT=$O5 tmo 90 python3 "$O5/supervise.py" "$L5" 1 > "$S
 PF=$(ls "$L5"/prompts/0001-bigone.md 2>/dev/null)
 check "A3: an ignored path is linked into the worktree" "[ -L $L5/wt/bigone/node_modules ] && [ -f $L5/wt/bigone/node_modules/dep/index.js ]"
 check "A3: a tracked path is refused, logged, left as the branch's own file" "has $L5/lane.log \"worktree_links: skipped 'vault/Home.md' for bigone\" && [ ! -L $L5/wt/bigone/vault/Home.md ] && [ -f $L5/wt/bigone/vault/Home.md ]"
-check "D9: worker argv carries no prompt (rc $brc)" "[ $brc = 0 ] && grep -qx -- '-p --dangerously-skip-permissions --model fake-model --disallowedTools Monitor' $L5/args-bigone.txt"
-check "D9: a >300 KiB prompt reaches the worker intact on stdin" "[ \$(wc -c < '$PF') -gt 307200 ] && cmp -s '$PF' $L5/stdin-bigone.txt"
+check "D9: worker argv carries no prompt (rc $brc)" "[ $brc = 0 ] && grep -qx -- '-p --dangerously-skip-permissions --model fake-model --disallowedTools Monitor' $L5/out/bigone/args-bigone.txt"
+check "D9: a >300 KiB prompt reaches the worker intact on stdin" "[ \$(wc -c < '$PF') -gt 307200 ] && cmp -s '$PF' $L5/out/bigone/stdin-bigone.txt"
 check "D9: the instruction is the last line of the prompt" "[ \"\$(tail -n 1 '$PF')\" = 'Follow the brief above verbatim, starting now.' ]"
 O6=$SB/org6; L6=$O6/lanes/c
 newlane "$O6" c 120

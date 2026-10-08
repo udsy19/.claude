@@ -27,8 +27,8 @@ python3 - "$CFG" "$W/org.json" <<'PY'
 # blocklist on "auth" also dropped auth_probe_interval_s). Anything else is left out and NAMED, so a recovery
 # knows what to re-add by hand. True = keep the value; a set = keep only those sub-keys; "map" = a name->value map.
 import json, sys
-SUP = {"backend", "model", "effort", "web_search", "command"}
-ALLOW = {"_comment": True, "_supervisor_alt": SUP, "project": True, "repo": True, "main_branch": True,
+SUP = {"backend", "model", "effort", "web_search", "command", "web_domains"}
+ALLOW = {"_comment": True, "_isolation": True, "_supervisor_alt": SUP, "project": True, "repo": True, "main_branch": True,
          "runtime": True, "host": True, "worker_user": True, "claude_bin": True, "bin_dir": True, "supervisor": SUP,
          "worker_models": "map", "default_worker_model": True, "worker_env": {"PATH"},
          "commit_env": {"GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL"},
@@ -38,7 +38,8 @@ ALLOW = {"_comment": True, "_supervisor_alt": SUP, "project": True, "repo": True
          "max_consults_per_day": True, "max_agent_starts_per_day": True, "max_agent_hours_per_day": True,
          "consult_timeout_s": True, "usage_limit_wait_s": True, "idle_wait_s": True, "poll_interval_s": True,
          "report_overdue_s": True, "lane_memory_tail_bytes": True, "lane_memory_consolidate_every": True,
-         "owner_answers_recent": True}
+         "owner_answers_recent": True,
+         "isolation": {"mode", "srt_bin", "allowed_domains", "allow_read", "allow_write", "auth_token_file"}}
 out, dropped = {}, []
 for k, v in json.load(open(sys.argv[1])).items():
     spec = ALLOW.get(k)

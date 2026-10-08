@@ -28,5 +28,9 @@
   "sync": { "push_main": false, "branch_globs": ["lane/*"], "interval_s": 300 },
   "state_backup_branch": "backup/lane-state",
   "state_backup": { "include": [] },
-  "auth_probe_interval_s": 1800
+  "auth_probe_interval_s": 1800,
+
+  "_isolation": "Every agent runs inside the sandbox runtime (docs/isolation.md). mode: srt (default) or none (unsandboxed). allowed_domains: extra hosts agents may reach (package registries); allow_read/allow_write: extra paths (toolchains under HOME such as ~/.cargo or ~/.rustup); auth_token_file: a `claude setup-token` token (default <ORG_ROOT>/secrets/claude-oauth-token).",
+  "isolation": { "mode": "srt", "allowed_domains": ["registry.npmjs.org", "crates.io", "static.crates.io", "index.crates.io"],
+                 "allow_read": [], "allow_write": [], "auth_token_file": "" }
 }
