@@ -125,6 +125,11 @@ echo "== a hostile worker, inside the sandbox"
 rc=0; (cd "$L" && ORG_ROOT=$ORG tmo 150 python3 "$ORG/supervise.py" "$L" 1 > "$SB/loop.out" 2>&1) || rc=$?
 A=$L/out/hostile/attacks.txt
 check "the loop ran the hostile agent and finished it (rc $rc)" "[ $rc = 0 ] && has $L/lane.log 'agent hostile finished' && [ -s $A ]"
+if ! { [ $rc = 0 ] && has "$L/lane.log" 'agent hostile finished' && [ -s "$A" ]; }; then   # say why, so a CI run is diagnosable
+  echo "  -- diagnostics: lane.log"; tail -15 "$L/lane.log" 2>/dev/null | sed 's/^/     /'
+  echo "  -- agent log(s)"; for f in "$L"/logs/*.log; do [ -f "$f" ] && { echo "     $f"; tail -25 "$f" | sed 's/^/     /'; }; done
+  echo "  -- loop output"; tail -15 "$SB/loop.out" 2>/dev/null | sed 's/^/     /'
+fi
 check "positive control: it could write its own workspace (the sandbox is not just broken)" "has $A 'ESCAPED own-write' && git -C $REPO log --format=%s lane/t/hostile | grep -q 'hostile: committed work'"
 check "A6: cannot read the owner's ~/.ssh" "has $A 'blocked ssh-read'"
 check "A6: does not see the loop's environment (PLANTED_SECRET)" "has $A 'blocked env-secret'"
